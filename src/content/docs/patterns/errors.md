@@ -254,7 +254,7 @@ graph LR
     subgraph Happy["HAPPY PATH (ok track)"]
         H1[getUser<br/>ok] --> H2[getPosts<br/>ok]
         H2 --> H3[enrichUser<br/>ok]
-        H3 --> H4[return<br/>{ user }]
+        H3 --> H4[return<br/>user]
     end
     
     subgraph Error["ERROR PATH (err track)"]

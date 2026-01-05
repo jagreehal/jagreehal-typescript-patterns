@@ -363,7 +363,32 @@ If a dependency fails repeatedly, retries can make things worse. While the servi
 - Returns fast errors instead of slow timeouts
 - Prevents retry storms from cascading
 
-Circuit breakers are outside the scope of `step.retry()`, but consider libraries like [opossum](https://github.com/nodeshift/opossum) or [cockatiel](https://github.com/connor4312/cockatiel) for production systems where dependencies fail frequently.
+`@jagreehal/workflow` includes `createCircuitBreaker` for protecting dependencies:
+
+```typescript
+import { createCircuitBreaker, isCircuitOpenError } from '@jagreehal/workflow';
+
+// Create a circuit breaker
+const apiBreaker = createCircuitBreaker('external-api', {
+  failureThreshold: 5,      // Open after 5 failures
+  resetTimeout: 30000,       // Try again after 30 seconds
+  halfOpenMax: 3,           // Allow 3 test requests in half-open state
+  windowSize: 60000,        // Count failures within this window
+});
+
+const result = await workflow(async (step) => {
+  // Wrap the step call with the circuit breaker
+  // If circuit is open, execute() throws CircuitOpenError which step.try() catches
+  const data = await step.try(
+    () => apiBreaker.execute(() => fetchFromExternalApi()),
+    { error: 'SERVICE_UNAVAILABLE' as const }
+  );
+
+  return data;
+});
+```
+
+The circuit breaker tracks failures and automatically opens when the threshold is exceeded, preventing cascading failures. When the circuit is open, calls fail fast instead of waiting for timeouts. The circuit automatically transitions to HALF_OPEN after the reset timeout to test if the service has recovered.
 
 You can also access timeout metadata:
 
