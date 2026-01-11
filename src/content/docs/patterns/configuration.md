@@ -503,9 +503,9 @@ Run TruffleHog or Gitleaks to catch accidentally committed secrets before they r
 
 We've established patterns. Functions take object parameters. Dependencies are injected. Infrastructure stays separate. Configuration is validated at startup.
 
-But patterns are only as good as their enforcement. How do you ensure these patterns are followed, especially with AI-generated code?
+Now let's see how everything comes together at the HTTP boundary—where your validated, typed, resilient code meets the outside world.
 
 ---
 
-*Next: [Enforcing Patterns with TypeScript](/patterns/typescript-config). Compile-time enforcement.*
+*Next: [API Design Patterns](/patterns/api). Building production-ready HTTP APIs.*
 

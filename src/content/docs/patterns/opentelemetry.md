@@ -507,6 +507,7 @@ const createOrder = trace(
 ```
 
 Every `createOrder` call generates a span with:
+
 - Attributes: userId, itemCount
 - Timing: how long it took
 - Status: success or failure
@@ -706,15 +707,162 @@ This turns your observability from "two separate tools" into a unified debugging
 
 ---
 
+## Canonical Log Lines (Wide Events)
+
+There's a fundamental problem with traditional logging that even structured logging doesn't solve: **logs are optimized for writing, not querying**.
+
+When a user reports "checkout failed," you need to find that specific request across potentially millions of log lines. With traditional logging, you get multiple scattered entries per request:
+
+```text
+[INFO] Checkout started userId=user-123
+[INFO] Cart loaded cartId=cart-1 itemCount=2
+[INFO] Payment processing started
+[ERROR] Payment failed: card_declined
+```
+
+Each line has partial context. To reconstruct what happened, you need to:
+
+1. Search for the userId
+2. Find the cartId from a different log line
+3. Correlate by timestamp
+4. Hope you don't mix up concurrent requests
+
+**Canonical log lines** (also called "wide events") solve this by emitting **one comprehensive log per request** with ALL context:
+
+```json
+{
+  "level": "info",
+  "msg": "[processCheckout] Request completed",
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "spanId": "00f067aa0ba902b7",
+  "duration_ms": 124.7,
+  "status_code": 500,
+  "user.id": "user-123",
+  "user.subscription": "premium",
+  "user.lifetime_value_cents": 284700,
+  "cart.id": "cart-1",
+  "cart.item_count": 2,
+  "cart.total_cents": 7998,
+  "cart.coupon_applied": "SAVE20",
+  "payment.method": "card",
+  "payment.provider": "stripe",
+  "payment.latency_ms": 150,
+  "error.type": "PaymentError",
+  "error.code": "card_declined"
+}
+```
+
+Now you can run queries that were previously impossible:
+
+```sql
+-- Find all checkout failures for premium users
+SELECT * FROM logs
+WHERE user.subscription = 'premium'
+  AND error.code IS NOT NULL;
+
+-- Group errors by code
+SELECT error.code, COUNT(*)
+FROM logs
+WHERE error.code IS NOT NULL
+GROUP BY error.code;
+
+-- Find slow checkouts with coupons
+SELECT * FROM logs
+WHERE duration_ms > 200
+  AND cart.coupon_applied IS NOT NULL;
+```
+
+### Enabling Canonical Log Lines in autotel
+
+autotel supports canonical log lines with a single configuration option:
+
+```typescript
+import { init, trace, setUser, httpServer } from 'autotel';
+import pino from 'pino';
+
+const logger = pino({ level: 'info' });
+
+init({
+  service: 'checkout-api',
+  logger,
+  canonicalLogLines: {
+    enabled: true,
+    rootSpansOnly: true, // One log per request, not per span
+    logger, // Emit via Pino
+  },
+});
+```
+
+Then accumulate context throughout your request:
+
+```typescript
+const processCheckout = trace((ctx) => async (req: CheckoutRequest) => {
+  // User context (setUser adds standard user.id attribute)
+  setUser(ctx, { id: req.userId, email: user.email });
+
+  // Custom user attributes
+  ctx.setAttributes({
+    'user.subscription': user.subscription,
+    'user.lifetime_value_cents': user.lifetimeValueCents,
+  });
+
+  // HTTP context
+  httpServer(ctx, {
+    method: 'POST',
+    route: '/api/checkout',
+    statusCode: 200,
+  });
+
+  // Business context accumulates as you process
+  ctx.setAttributes({
+    'cart.id': req.cartId,
+    'cart.item_count': items.length,
+    'cart.total_cents': total,
+    'payment.method': req.paymentMethod,
+    'payment.provider': 'stripe',
+  });
+
+  // If error occurs, add error context
+  if (paymentFailed) {
+    ctx.setAttributes({
+      'error.type': 'PaymentError',
+      'error.code': 'card_declined',
+      'error.retriable': true,
+    });
+  }
+
+  // When span ends, autotel emits ONE canonical log with ALL attributes
+  return result;
+});
+```
+
+### Why This Works
+
+The pattern follows **tail sampling**: you decide what to log *after* the span completes, when you know the full picture (duration, status, all accumulated context). This is more useful than head sampling (logging at the start when you don't know what will happen).
+
+Key characteristics of canonical log lines:
+
+- **High cardinality**: Include user IDs, order IDs, trace IDs—fields with many unique values that enable precise queries
+- **Flat structure**: Use dot-notation (`user.id`, `cart.total_cents`) instead of nested objects for easier querying
+- **Emitted at span end**: All context is available, including duration and final status
+- **One per request**: Set `rootSpansOnly: true` to emit only for root spans
+
+For a complete working example, see the [autotel canonical logs example](https://github.com/jagreehal/autotel/tree/main/apps/example-canonical-logs).
+
+**Further reading:** The "logs are optimized for writing, not querying" insight comes from Boris Tane's excellent article [Logging Sucks](https://arrangeactassert.com/posts/logging-sucks/), which introduces the wide events pattern and the "Wide Event Builder Simulator" concept.
+
+---
+
 ## The Rules
 
 1. **Use structured logging.** JSON fields, not string interpolation. Use Pino with redaction for both logs and span attributes.
 2. **Wrap with trace().** Observability is orthogonal to business logic (Observer pattern).
 3. **Use semantic conventions.** Standard attribute names (`user.id`, `http.method`) enable automatic backend correlation.
 4. **Correlate logs and traces.** Include `traceId` and `spanId` in every log message.
-5. **Map Result to span status.** ok = success, err = failure.
-6. **Nested traces work automatically.** No manual context passing.
-7. **Tests don't change.** trace() is transparent when tracing is disabled.
+5. **Emit canonical log lines.** One wide event per request with all context—optimize for querying, not writing.
+6. **Map Result to span status.** ok = success, err = failure.
+7. **Nested traces work automatically.** No manual context passing.
+8. **Tests don't change.** trace() is transparent when tracing is disabled.
 
 ---
 
@@ -735,4 +883,3 @@ That's what we'll figure out next.
 ---
 
 *Next: [Resilience Patterns](/patterns/resilience). Retries, circuit breakers, and timeouts.*
-

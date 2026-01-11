@@ -16,9 +16,10 @@ Over this series, we've established a complete architecture for TypeScript appli
 4. **Trace orthogonally.** Wrap functions with `trace()` from autotel. Observability without cluttering business logic. Use semantic conventions and correlate logs with traces.
 5. **Resilience in workflows.** Use `step.retry()` and `step.withTimeout()` at the workflow level. Never retry non-idempotent operations. Use jitter to prevent thundering herd.
 6. **Configuration at startup.** Validate and type config at the boundary with `node-env-resolver`. Secrets in memory only, never in `process.env`. Use secret managers and ephemeral credentials.
-7. **TypeScript enforces types.** Beyond `strict`: `noUncheckedIndexedAccess`, `erasableSyntaxOnly`, `verbatimModuleSyntax`. Use `ts-reset` to close `any` leaks.
-8. **ESLint enforces patterns.** Lint-time checks catch architectural violations (boundaries, object params, server/client separation). Rules fail builds, not just warn.
-9. **Performance testing proves it.** Load tests (smoke, load, stress, soak, spike) reveal bottlenecks; chaos tests prove resilience patterns actually work.
+7. **API design.** Thin handlers translate HTTP to domain. Consistent error envelopes. Health checks, graceful shutdown, security headers. Everything comes together at the boundary.
+8. **TypeScript enforces types.** Beyond `strict`: `noUncheckedIndexedAccess`, `erasableSyntaxOnly`, `verbatimModuleSyntax`. Use `ts-reset` to close `any` leaks.
+9. **ESLint enforces patterns.** Lint-time checks catch architectural violations (boundaries, object params, server/client separation). Rules fail builds, not just warn.
+10. **Performance testing proves it.** Load tests (smoke, load, stress, soak, spike) reveal bottlenecks; chaos tests prove resilience patterns actually work.
 
 ---
 
@@ -183,8 +184,9 @@ src/
 5. **Trace orthogonally.** Wrap functions with `trace()` from autotel. Don't litter business logic with logging. Use semantic conventions.
 6. **Resilience in workflows.** Use `step.retry()` and `step.withTimeout()` at the workflow level, not in business functions. Never retry non-idempotent operations.
 7. **Configure at startup.** Validate config at the boundary with `node-env-resolver`. Secrets in memory only, never in `process.env`. Use secret managers in production.
-8. **Enforce with tooling.** TypeScript (`strict`, `noUncheckedIndexedAccess`, `ts-reset`) for types. ESLint (boundaries, object params) for patterns. Everything fails fast.
-9. **Test progressively.** Unit → Integration → Load → Chaos. Use vitest-mock-extended for typed mocks. Use Faker for test stubs. Each layer catches different bugs.
+8. **Thin handlers.** HTTP handlers translate between HTTP and domain. Consistent error envelopes. Health checks and graceful shutdown.
+9. **Enforce with tooling.** TypeScript (`strict`, `noUncheckedIndexedAccess`, `ts-reset`) for types. ESLint (boundaries, object params) for patterns. Everything fails fast.
+10. **Test progressively.** Unit → Integration → Load → Chaos. Use vitest-mock-extended for typed mocks. Use Faker for test stubs. Each layer catches different bugs.
 
 ---
 

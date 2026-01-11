@@ -177,6 +177,51 @@ Different lifetimes deserve different parameters.
 
 ---
 
+## What About Context?
+
+You might ask: 'What about request-scoped context like trace IDs, user info, or cancellation signals?'
+
+For **observability context** (trace/span IDs, correlation IDs, baggage, span attributes), you don't need a third parameter. Keep domain functions pure and layer telemetry on top with a wrapper.
+
+```ts
+// domain/create-user.ts — pure business logic
+export async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
+  const user = await deps.db.users.insert(args);
+  return user;
+}
+
+// app/create-user.traced.ts — observability layer
+import { trace } from 'autotel';
+import { createUser } from '../domain/create-user';
+
+export const createUserTraced = trace('user.create', async (args: CreateUserArgs, deps: CreateUserDeps) => {
+  return createUser(args, deps);
+});
+```
+
+If you need direct access to trace context (attributes, baggage, etc.), use the factory form:
+
+```ts
+import { trace } from 'autotel';
+import { createUser } from '../domain/create-user';
+
+export const createUserTraced = trace((ctx) => async (args: CreateUserArgs, deps: CreateUserDeps) => {
+  ctx.setAttribute('user.plan', args.plan);
+  return createUser(args, deps);
+});
+```
+
+This keeps the core message clean:
+
+- **Dependency injection** (`fn(args, deps)`) is for correctness and testability
+- **Observability** is layered on, not baked in
+
+→ See [OpenTelemetry patterns](/patterns/opentelemetry) for the complete tracing approach.
+
+If context changes business behavior (e.g. tenant isolation or authorization), model it explicitly in `args` or as request-scoped `deps`—not as "extra data."
+
+---
+
 ### Where Does This Live?
 
 The factory gets called in your **Composition Root**, the entry point where you wire everything together. This is typically `main.ts`, `server.ts`, or wherever your app boots:
@@ -334,9 +379,111 @@ For business logic? Prefer functions.
 
 ---
 
+## Grouping Related Functions: The Trade-off
+
+When you end up with many related functions (5+), you have two valid ways to inject them:
+
+- **Inject individually** (optimizes for precision: minimal deps per consumer)
+- **Inject as a grouped object** (optimizes for wiring: one thing to pass around)
+
+This choice is not about type safety—you can export explicit input/output types either way. It's about how your codebase uses these functions.
+
+> Pick one approach per module. If grouping starts to feel like a "god object", split it.
+
+### Approach 1: Inject Individually (default)
+
+Use this when most consumers only need a subset (1–2 functions), or when you want dependency lists to stay honest and minimal.
+
+```ts
+// user-functions.ts
+export async function getUser(args: { userId: string }, deps: GetUserDeps) {
+  // ...
+}
+
+export async function createUser(
+  args: { name: string; email: string },
+  deps: CreateUserDeps
+) {
+  // ...
+}
+
+// Function types (single source of truth: the function itself)
+export type GetUserFn = typeof getUser;
+export type CreateUserFn = typeof createUser;
+
+// Explicit output/input types (no stringy indexing)
+export type GetUserResult = Awaited<ReturnType<GetUserFn>>;
+export type CreateUserResult = Awaited<ReturnType<CreateUserFn>>;
+
+export type GetUserArgs = Parameters<GetUserFn>[0];
+export type CreateUserArgs = Parameters<CreateUserFn>[0];
+
+// notification-handler.ts — only needs sendWelcomeEmail
+export type NotificationHandlerDeps = {
+  sendWelcomeEmail: SendWelcomeEmailFn;
+  // doesn't need getUser or createUser
+};
+```
+
+**Use this when:**
+
+✅ Most consumers only need 1–2 functions
+
+✅ You want the smallest possible dependency surface area per consumer
+
+✅ You want "no magic strings" and direct `typeof fn` types
+
+**Trade-off:** More verbose wiring (but very explicit)
+
+### Approach 2: Inject as a Grouped Object (when they travel together)
+
+Use this when the functions form a cohesive module and most consumers inject the same set. This reduces DI boilerplate in routers/service factories.
+
+```ts
+// user-functions.ts
+export const userFns = {
+  getUser,
+  createUser,
+  updateUser,
+  deleteUser,
+  sendWelcomeEmail,
+  sendPasswordReset,
+} as const;
+
+export type UserFns = typeof userFns;
+
+// Quote-free type exports (no bracket string access required)
+export type GetUserFn = typeof userFns.getUser;
+export type GetUserResult = Awaited<ReturnType<GetUserFn>>;
+
+// user-router.ts — needs most user functions
+export type UserRouterDeps = {
+  userFns: UserFns; // simplest
+  // If you really want to narrow the surface area, you can use Pick<UserFns, ...>
+};
+```
+
+**Use this when:**
+
+✅ The functions are usually injected together
+
+✅ You want simpler wiring and fewer constructor-like objects
+
+✅ The group is truly cohesive (not a dumping ground)
+
+**Trade-off:** Some consumers may receive more than they use (which is fine for cohesive modules)
+
+### Rule of thumb
+
+**Default to injecting individually.**
+
+Group only when the functions are a cohesive unit and genuinely travel together (often at boundaries: routers, service factories, composition root). If grouping starts to feel like a "god object", split it.
+
+---
+
 ## The Rules
 
-1. **Per-function deps.** Avoid god objects. Each function declares exactly what it needs.
+1. **Per-function deps.** Avoid god objects. Each function declares exactly what it needs. Group related functions only when they're cohesive and always used together.
 
 2. **Inject what you want to mock.** infrastructure (db, logger) and collaborators. Import pure utilities you'll never mock (think `lodash`, `slugify`, math helpers—only inject things that hit network, disk, or the clock).
 
@@ -353,9 +500,7 @@ For business logic? Prefer functions.
 
 3. **Factory at the boundary.** Wire deps once, expose clean API.
 
-```text
-// The pattern
-fn(args, deps)
+The pattern: `fn(args, deps)`
 
 ```mermaid
 graph TD
@@ -369,6 +514,7 @@ graph TD
     linkStyle 0 stroke:#0f172a,stroke-width:3px
     linkStyle 1 stroke:#0f172a,stroke-width:3px
 ```
+
 ---
 
 ## Dependency Injection & Testability Guidelines

@@ -3,7 +3,7 @@ title: Enforcing Patterns with TypeScript
 description: Use strict TypeScript compiler flags to enforce patterns at compile time. Beyond strict mode with noUncheckedIndexedAccess.
 ---
 
-*Previously: [Configuration at the Boundary](/patterns/configuration). We've established patterns. But patterns are only as good as their enforcement.*
+*Previously: [API Design Patterns](/patterns/api). We've built the complete application architecture. Now let's enforce it.*
 
 ---
 

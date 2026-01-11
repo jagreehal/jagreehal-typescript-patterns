@@ -107,6 +107,7 @@ async function getUser(
 ```
 
 Now the signature tells the truth:
+
 - Success: you get a `User`
 - Failure: either `'NOT_FOUND'` or `'DB_ERROR'`
 
@@ -238,6 +239,7 @@ const result = await loadUserData(async (step) => {
 ```
 
 Look at that. No manual `if (!result.ok)` checks. The `step()` function:
+
 - Unwraps the Result if it's `ok`, giving you the value
 - Short-circuits the whole workflow if it's an error
 
@@ -277,6 +279,7 @@ graph LR
 ```
 
 The `step()` function:
+
 - Unwraps `ok` results and continues on the happy path
 - On `err`, immediately switches to the error track and skips remaining steps
 - No manual `if (!result.ok) return` checks needed
@@ -320,6 +323,7 @@ const result = await workflow(async (step) => {
 ```
 
 The key difference:
+
 - `step()` is for functions that already return `Result<T, E>` (your code)
 - `step.try()` is for functions that throw (their code)
 
@@ -551,7 +555,7 @@ function assertNonEmpty<T>(arr: T[]): asserts arr is [T, ...T[]] {
 **Rule of thumb:**
 
 | Situation | Use |
-|-----------|-----|
+| --------- | --- |
 | Domain failure (not found, validation) | Result |
 | Infrastructure failure you can recover from | Result |
 | Programmer error | throw |
@@ -739,4 +743,3 @@ Our functions are clean, but they're opaque. We can't see inside them when they 
 ---
 
 *Next: [Functions + OpenTelemetry](/patterns/opentelemetry). Making our functions observable.*
-
