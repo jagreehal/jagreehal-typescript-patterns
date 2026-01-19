@@ -50,7 +50,7 @@ import type { Database, Logger } from '../infra/types';
 import { z } from 'zod';
 import { ok, err, type Result } from '../lib/result';
 import { trace, type TraceContext } from 'autotel';
-import { createWorkflow } from 'awaitly';
+import { createWorkflow } from 'awaitly/workflow';
 
 // 1. Validation schema at the boundary
 const CreateUserArgsSchema = z.object({
@@ -217,7 +217,7 @@ This architecture uses these tools:
 | Tool | Purpose |
 | ---- | ------- |
 | `vitest-mock-extended` | Typed mocks for dependency injection |
-| `awaitly` | Railway-oriented programming with `createWorkflow` and `step()` |
+| `awaitly` | Result types and workflow orchestration (`awaitly/workflow`, `awaitly/saga`, `awaitly/hitl`) |
 | `autotel` | Simple OpenTelemetry wrapper with `trace()` |
 | `zod` | Schema validation at boundaries |
 | `node-env-resolver` | Configuration validation and secret management |

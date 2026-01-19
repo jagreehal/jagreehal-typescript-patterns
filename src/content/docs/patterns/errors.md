@@ -224,7 +224,8 @@ Can we do better?
 Here's where [awaitly](https://github.com/jagreehal/awaitly) comes in. It gives you a way to compose Results that looks almost like regular async code:
 
 ```typescript
-import { createWorkflow, ok, err } from 'awaitly';
+import { ok, err } from 'awaitly';
+import { createWorkflow } from 'awaitly/workflow';
 
 // Declare dependencies → error union computed automatically
 const loadUserData = createWorkflow({ getUser, getPosts, enrichUser });
@@ -306,6 +307,8 @@ This is the real world. You've built a clean system of Results, but you still ha
 That's what `step.try()` is for:
 
 ```typescript
+import { createWorkflow } from 'awaitly/workflow';
+
 const workflow = createWorkflow({ getUser });
 
 const result = await workflow(async (step) => {
@@ -656,7 +659,8 @@ The key: **your domain errors stay clean, and the boundary layer owns the transl
 ## Full Example
 
 ```typescript
-import { createWorkflow, ok, err, type AsyncResult } from 'awaitly';
+import { ok, err, type AsyncResult } from 'awaitly';
+import { createWorkflow } from 'awaitly/workflow';
 
 // Types
 type User = { id: string; name: string; email: string };

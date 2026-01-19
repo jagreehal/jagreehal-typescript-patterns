@@ -15,7 +15,7 @@ Individual functions with Result types are great. But real operations span multi
 
 ## The Sequential Trap
 
-Developers naturally chain async calls sequentially, handling errors at the end:
+Developers naturally chain async calls in a straight line, handling errors at the end:
 
 ```typescript
 async function checkout(
@@ -69,7 +69,8 @@ The problem isn't exceptions—it's that the code doesn't record which side effe
 Let's start simple. `createWorkflow` gives you a structured way to compose Result-returning functions:
 
 ```typescript
-import { createWorkflow, ok, err, type AsyncResult } from 'awaitly';
+import { ok, err, type AsyncResult } from 'awaitly';
+import { createWorkflow } from 'awaitly/workflow';
 
 // Define operations that return Results
 async function chargePayment(
@@ -132,6 +133,17 @@ The `step()` function accepts an async function returning `AsyncResult` (or a pr
 // 'PAYMENT_DECLINED' | 'PAYMENT_ERROR' | 'OUT_OF_STOCK' | 'ORDER_CREATION_FAILED' | UnexpectedError
 ```
 
+`UnexpectedError` captures failures that weren't returned as `err()` by your operations. This is usually a thrown exception (including those from libraries) or anything else that escapes your typed error model (unexpected states). It wraps the original error with context about which step failed.
+
+If you want timeouts or network failures to be typed, catch them inside the operation and return a domain error (e.g., `err('PAYMENT_TIMEOUT')`):
+
+```typescript
+if (!result.ok && result.error.type === 'UNEXPECTED') {
+  console.log('Step failed:', result.error.stepName);
+  console.log('Original error:', result.error.cause);  // The thrown exception
+}
+```
+
 No manual `if (!result.ok)` checks. The type system documents what can go wrong.
 
 We've eliminated boilerplate and made error types explicit across steps. But we still haven't solved the partial failure problem. If payment succeeds and inventory fails, the customer is still charged.
@@ -145,7 +157,7 @@ It's 6pm. Your on-call phone rings. A customer placed an order, got charged twic
 **Sagas solve this.** Each step declares both what to do AND what to undo. If any step fails, previous steps are compensated in reverse order.
 
 ```typescript
-import { createSagaWorkflow, isSagaCompensationError } from 'awaitly';
+import { createSagaWorkflow, isSagaCompensationError } from 'awaitly/saga';
 
 // Pass all operations (actions + compensations) to createSagaWorkflow
 const sagaCheckout = createSagaWorkflow({
@@ -247,6 +259,48 @@ if (!result.ok && isSagaCompensationError(result.error)) {
 
 In awaitly, if a compensation fails, the saga still attempts remaining compensations (it doesn't stop early) and returns a structured error describing what succeeded and what didn't. This gives you the best chance of cleanup while providing enough information for manual intervention when needed.
 
+### Compensation Limitations
+
+Compensations are **best-effort, not transactional**. Some actions cannot be undone:
+
+- **Sent emails** – You can't unsend an email. At best, send a correction.
+- **Published events** – Downstream consumers may have already acted on them.
+- **Time-sensitive reservations** – A hotel room for tonight can't be "unreserved" if the guest already checked in.
+- **External API calls** – The third-party may not support reversal.
+
+**Compensation Checklist:**
+
+| Property | Why it matters |
+|----------|----------------|
+| **Safe** | Compensation must not cause additional harm (e.g., double-refunding) |
+| **Idempotent** | Running twice produces the same result (compensation itself may fail and retry) |
+| **Observable** | Log and emit metrics so you know when compensations run and whether they succeed |
+| **Alerting** | Failed compensations need human attention—don't silently swallow errors |
+| **Bounded** | Consider timeouts; a hanging compensation blocks the saga's error path |
+| **Eventual** | Compensation success ≠ immediate effect (refunds may be "pending" for days) |
+
+```typescript
+// Good: Observable, idempotent compensation with timeout
+{
+  compensate: async (payment) => {
+    const span = tracer.startSpan('refund-payment');
+    try {
+      // Idempotent: refund API checks if already refunded
+      const result = await withTimeout(
+        deps.refundPayment({ paymentId: payment.id, idempotencyKey: `refund-${payment.id}` }),
+        { ms: 30_000 }
+      );
+      span.setStatus({ code: result.ok ? 'OK' : 'ERROR' });
+      return result;
+    } finally {
+      span.end();
+    }
+  },
+}
+```
+
+When compensation is impossible, document what *can* be done (e.g., "queue for manual review") rather than leaving a no-op.
+
 ### Idempotency and Retries
 
 When combining sagas with retries (via `step.retry()` from [Resilience Patterns](/patterns/resilience)), ensure side-effecting steps are idempotent. Use idempotency keys so a retry can't double-apply:
@@ -259,6 +313,86 @@ const payment = await saga.step(
 ```
 
 Without an idempotency key, a retry after a timeout could charge the customer twice.
+
+### Delivery Semantics: At-Least-Once Reality
+
+Idempotency keys help, but understand what they *don't* guarantee:
+
+**The timeout problem:**
+```
+Client → Payment API → [timeout] → Client retries
+                    ↓
+              Payment succeeded (unknown to client)
+```
+
+Your request succeeded, but the response was lost. With an idempotency key, the retry returns the original result instead of charging twice. **But only if the provider supports idempotency keys** and you use the same key.
+
+**What this means:**
+
+| Scenario | Without idempotency key | With idempotency key |
+|----------|------------------------|---------------------|
+| Request fails before processing | Safe to retry | Safe to retry |
+| Request succeeds, response lost | **Double charge** | Returns original result |
+| Request processed, then retry with *different* key | **Double charge** | **Double charge** |
+
+**You get at-least-once, not exactly-once.** The saga may execute a step multiple times during retries. Design for this:
+
+```typescript
+// Bad: Non-idempotent - creates duplicate records on retry
+await saga.step(
+  () => deps.createOrder({ userId, items }),
+  { name: 'create-order', compensate: (o) => deps.cancelOrder({ orderId: o.id }) }
+);
+
+// Good: Idempotent - uses external reference as natural key
+await saga.step(
+  () => deps.createOrder({ userId, items, orderReference: `cart-${cartId}` }),
+  { name: 'create-order', compensate: (o) => deps.cancelOrder({ orderId: o.id }) }
+);
+```
+
+**Where duplicates can still occur:**
+1. **No idempotency support** – Some APIs don't support idempotency keys
+2. **Key mismatch** – Using a different key on retry (e.g., regenerating a UUID)
+3. **Key expiration** – Many providers expire idempotency keys after 24-48 hours
+4. **Cross-system** – Your DB write is idempotent, but the downstream webhook isn't
+
+When exact-once matters (financial transactions, inventory), combine idempotency keys with reconciliation jobs that detect and resolve duplicates.
+
+### Saga + Retry Interaction
+
+Combining `saga.step()` with retry logic (e.g., `step.retry()` from resilience patterns) introduces additional hazards:
+
+**The crash window problem:**
+```
+saga.step(chargePayment) → payment succeeds → [CRASH before step recorded]
+                                                    ↓
+                              Saga resumes → retries chargePayment → double charge
+```
+
+Even with idempotency keys, your system only "knows" a step completed if you recorded it (via persisted workflow state, a database write, or the external system's idempotency guarantees). If your process crashes after the side effect but before the saga records completion, a retry will re-execute the action.
+
+**Key constraints for safe saga retries:**
+
+1. **Actions must be idempotent** – The action itself (not just the API call) must handle re-execution safely
+2. **Compensation history isn't replayed** – Retrying a saga step re-runs the action, but if the saga later fails, compensation runs once (not once per retry)
+3. **Persist state after side-effecting steps** – If your workflow supports persisted state, save it immediately after a side-effecting step succeeds (this is your responsibility, not automatic)
+
+```typescript
+// Dangerous: retry wrapper outside saga step tracking (multiple step events, confusing observability)
+const payment = await retry(
+  () => saga.step(() => deps.charge({ amount, idempotencyKey })),
+  { maxAttempts: 3 }
+);
+
+// Better: retry inside the action (one logical step, one set of events)
+const payment = await saga.step(
+  () => retry(() => deps.charge({ amount, idempotencyKey }), { maxAttempts: 3 }),
+  { compensate: (p) => deps.refund({ paymentId: p.id }) }
+);
+```
+
+When in doubt, make your actions idempotent at the domain level (check-then-act with database constraints) rather than relying solely on idempotency keys.
 
 ### Not Everything Needs Compensation
 
@@ -298,6 +432,88 @@ const result = await orderSaga(async (saga, deps) => {
 });
 ```
 
+### Concurrency Hazards in Sagas
+
+Inventory reservation is a classic race condition. Two concurrent checkouts for the last item:
+
+```
+Saga A: reserve(item) → success (1 left → 0 left)
+Saga B: reserve(item) → success (0 left → -1 left) ← oversold!
+```
+
+**Or worse—the compensation race:**
+
+```
+Saga A: reserve → charge → [charge fails] → release
+Saga B:              reserve (while A is releasing) → charge → ship
+                              ↑
+                     B reserved the item A is about to release
+```
+
+**Mitigation strategies:**
+
+1. **Use leases with TTLs, not permanent reservations:**
+
+```typescript
+const reservation = await saga.step(
+  () => deps.reserveInventory({
+    items,
+    leaseDurationMs: 5 * 60 * 1000,  // 5-minute hold
+    leaseId: `checkout-${checkoutId}`
+  }),
+  {
+    name: 'reserve-inventory',
+    compensate: (r) => deps.releaseInventory({ leaseId: r.leaseId }),
+  }
+);
+```
+
+If the saga crashes without compensating, the lease expires automatically. No orphaned reservations.
+
+2. **Make release idempotent and lease-aware:**
+
+```typescript
+async function releaseInventory({ leaseId }: { leaseId: string }): AsyncResult<void, 'ALREADY_RELEASED'> {
+  const lease = await db.leases.find(leaseId);
+  if (!lease || lease.expired || lease.released) {
+    // Already released or expired - idempotent success
+    return ok(undefined);
+  }
+  await db.leases.update(leaseId, { released: true });
+  await db.inventory.increment(lease.itemId, lease.quantity);
+  return ok(undefined);
+}
+```
+
+3. **Consider compensation timing:**
+
+```typescript
+// Compensation should check if the reservation is still valid
+compensate: async (reservation) => {
+  const current = await deps.getReservation({ id: reservation.id });
+  if (current.status === 'converted_to_order') {
+    // Another saga completed the order - don't release!
+    return ok(undefined);
+  }
+  return deps.releaseInventory({ reservationId: reservation.id });
+}
+```
+
+**The general principle:** Compensations must handle the case where time has passed and state has changed. Check current state before compensating.
+
+**Avoid check-then-reserve patterns.** The overselling example above happens when `checkAvailability` and `reserve` are separate calls. Prefer a single atomic `reserveIfAvailable` endpoint that uses database constraints:
+
+```typescript
+// Fragile: TOCTOU race between check and reserve
+const available = await deps.inventory.checkAvailable(itemId, quantity);
+if (!available) return err('OUT_OF_STOCK');
+await deps.inventory.reserve(itemId, quantity);  // Another request may have reserved it
+
+// Better: Atomic reserve with constraint
+const result = await deps.inventory.reserveIfAvailable(itemId, quantity);
+// Uses: UPDATE inventory SET reserved = reserved + ? WHERE id = ? AND (available - reserved) >= ?
+```
+
 ---
 
 ## Multi-API Orchestration: Parallel Operations
@@ -305,7 +521,8 @@ const result = await orderSaga(async (saga, deps) => {
 Your dashboard loads user profile, recent orders, and recommendations. Sequential calls take 900ms (300ms each). But they're independent. Why wait?
 
 ```typescript
-import { createWorkflow, allAsync } from 'awaitly';
+import { allAsync } from 'awaitly';
+import { createWorkflow } from 'awaitly/workflow';
 
 const loadDashboard = createWorkflow({ fetchProfile, fetchOrders, fetchRecommendations });
 
@@ -325,32 +542,55 @@ const result = await loadDashboard(async (step, deps) => {
 
 `allAsync` is like `Promise.all` but for Results. If any operation fails, it short-circuits immediately.
 
-### Best-Effort with allSettledAsync
+**Cancellation caveat:** "Fail-fast" means the workflow returns early, but in-flight requests may continue running (standard JavaScript Promise behavior). For side-effecting calls or rate-limited APIs, pass an `AbortSignal` to cancel abandoned work:
 
-Sometimes you want to show what you can, even if some calls fail:
+```typescript
+const controller = new AbortController();
+
+const result = await step(async () => {
+  const promise = allAsync([
+    deps.fetchProfile({ userId, signal: controller.signal }),
+    deps.fetchOrders({ userId, limit: 5, signal: controller.signal }),
+    deps.fetchRecommendations({ userId, signal: controller.signal }),
+  ]);
+
+  // Abort when the group fails (if allAsync fails fast, this stops stragglers)
+  promise.catch(() => controller.abort());
+
+  return promise;
+});
+```
+
+Note: Cancellation requires support at the fetch layer (e.g., `fetch` with `signal`, or your HTTP client's abort mechanism). Without it, requests complete even after abort is called. If `allAsync` doesn't fail fast, you'll need a helper that aborts when the first failure is observed.
+
+### Collecting All Errors with allSettledAsync
+
+When you need to know all failures (not just the first), use `allSettledAsync`:
 
 ```typescript
 import { allSettledAsync } from 'awaitly';
 
-const result = await loadDashboard(async (step, deps) => {
-  const results = await step(() =>
-    allSettledAsync([
-      deps.fetchProfile({ userId }),
-      deps.fetchOrders({ userId, limit: 5 }),
-      deps.fetchRecommendations({ userId }),
-    ])
-  );
+// allSettledAsync waits for all operations and collects any errors
+const result = await allSettledAsync([
+  fetchProfile({ userId }),
+  fetchOrders({ userId, limit: 5 }),
+  fetchRecommendations({ userId }),
+]);
 
-  // Handle partial success
-  const profile = results[0].status === 'ok' ? results[0].value : defaultProfile;
-  const orders = results[1].status === 'ok' ? results[1].value : [];
-  const recs = results[2].status === 'ok' ? results[2].value : [];
-
+if (result.ok) {
+  // ALL succeeded - result.value is tuple of unwrapped values
+  const [profile, orders, recs] = result.value;
   return { profile, orders, recommendations: recs };
-});
+} else {
+  // ONE OR MORE failed - result.error is array of SettledError objects
+  console.log('Failures:', result.error.map(e => e.error));
+  // Handle gracefully or return error
+}
 ```
 
-`allSettledAsync` doesn't short-circuit on failure—it returns an array with a Result for each operation, letting you handle partial success.
+**Note:** Unlike `Promise.allSettled()`, this returns a Result - `ok` if all succeed, `err` if any fail. This is consistent with awaitly's philosophy that all functions return Results.
+
+Use it when you want to report all failures at once rather than stopping at the first error. For true "partial success" where you continue with whatever succeeded, check each result individually after using `Promise.allSettled()` directly.
 
 ### Racing to First Success
 
@@ -469,6 +709,34 @@ if (!result.ok) {
 }
 ```
 
+**Safe resumption patterns:**
+
+Using `itemIndex` for resumption only works if your input array is stable between runs. In production, prefer cursor-based approaches:
+
+```typescript
+// Fragile: Array index changes if items are added/removed
+await processInBatches(users.slice(lastFailedIndex), processUser, options);
+
+// Better: Checkpoint the last processed ID
+const checkpoint = await db.checkpoints.get('user-migration');
+const unprocessed = await db.users.findMany({
+  where: { id: { gt: checkpoint?.lastProcessedId ?? '' } },
+  orderBy: { id: 'asc' },
+});
+
+await processInBatches(unprocessed, async (user) => {
+  const result = await migrateUser(user);
+  if (result.ok) {
+    await db.checkpoints.upsert('user-migration', { lastProcessedId: user.id });
+  }
+  return result;
+}, options);
+```
+
+For jobs where order may change (e.g., priority queues), checkpoint a *set* of processed IDs rather than a single cursor. **Caution:** tracking a set can grow unbounded; prefer cursor checkpoints with stable ordering, idempotent writes, or a "processed" marker column in your data store.
+
+The most robust pattern is idempotent processing + a "processed" marker or unique constraint, so reprocessing after a crash is safe.
+
 ---
 
 ## Human-in-the-Loop: Approval Workflows
@@ -478,13 +746,9 @@ Refunds over $1000 require manager approval. The customer clicks 'refund', and..
 With awaitly, approval is a first-class step:
 
 ```typescript
-import {
-  createWorkflow,
-  createApprovalStep,
-  isPendingApproval,
-  stringifyState,
-  createStepCollector,
-} from 'awaitly';
+import { createWorkflow, createStepCollector } from 'awaitly/workflow';
+import { createApprovalStep, isPendingApproval } from 'awaitly/hitl';
+import { stringifyState } from 'awaitly/persistence';
 
 // Define the approval step (parameterized by refundId at runtime)
 const createRefundApprovalStep = (refundId: string) =>
@@ -546,7 +810,8 @@ if (!result.ok && isPendingApproval(result.error)) {
 When the manager approves:
 
 ```typescript
-import { injectApproval, parseState } from 'awaitly';
+import { injectApproval } from 'awaitly/hitl';
+import { parseState } from 'awaitly/persistence';
 
 // Load saved state
 const saved = await db.pendingWorkflows.find(refundId);
@@ -568,26 +833,140 @@ const result = await workflow(async (step, deps) => {
 // Workflow continues from the approval step
 ```
 
-### Testing Approval Workflows
+**Security considerations:** `injectApproval` is powerful—it lets code bypass the normal approval check. In production:
 
-Don't wait for humans in tests—inject approvals:
+1. **Verify approver identity** – Ensure the approver is authorized for this approval type
+2. **Audit log all approvals** – Record who approved, when, and what workflow it affected
+3. **Validate approval context** – Check that the approval matches the pending workflow (e.g., refund amount hasn't changed)
 
 ```typescript
+// Before injecting approval, validate the approver
+const approver = await auth.getCurrentUser();
+if (!approver.permissions.includes('approve:refunds')) {
+  throw new Error('Unauthorized approver');
+}
+
+await auditLog.record({
+  action: 'workflow_approval',
+  workflowId: refundId,
+  approvedBy: approver.id,
+  approvalKey: `refund-approval:${refundId}`,
+  timestamp: Date.now(),
+});
+
+const updatedState = injectApproval(state, { /* ... */ });
+```
+
+**Source of truth:** Treat your approvals table as the system of record—`injectApproval` only mutates workflow state for resumption. When an approver acts: write the decision to your database first, then inject and resume using that recorded decision. If your system crashes between inject and resume, the DB record lets you retry safely.
+
+### Testing Approval Workflows
+
+Don't wait for humans in tests—inject approvals using `injectApproval()` with `resumeState`:
+
+```typescript
+import { injectApproval } from 'awaitly/hitl';
+import { createWorkflow } from 'awaitly/workflow';
+
 const approvalStep = createRefundApprovalStep('test-refund-123');
 
-const result = await refundWorkflow(
-  async (step, deps) => {
-    const refund = await step(() => deps.calculateRefund({ orderId }));
-    const approval = await step(approvalStep);
-    return await step(() => deps.processRefund({ refund, approval }));
-  },
-  {
-    approvals: {
-      'refund-approval:test-refund-123': { approved: true, approvedBy: 'test@test.com' },
-    },
-  }
-);
+// Create resume state with pre-approved value
+const emptyState = { steps: new Map() };
+const resumeState = injectApproval(emptyState, {
+  stepKey: 'refund-approval:test-refund-123',
+  value: { approved: true, approvedBy: 'test@test.com' },
+});
+
+// Workflow uses cached approval from resumeState
+const workflow = createWorkflow({ calculateRefund, processRefund }, { resumeState });
+
+const result = await workflow(async (step, deps) => {
+  const refund = await step(() => deps.calculateRefund({ orderId }));
+  // Must use matching key for cache lookup
+  const approval = await step(approvalStep, { key: 'refund-approval:test-refund-123' });
+  return await step(() => deps.processRefund({ refund, approval }));
+});
 ```
+
+### Durability Boundaries
+
+The `stringifyState` / `parseState` / `injectApproval` pattern saves **workflow execution state**, not your application's side effects. Understand what's persisted:
+
+**What IS persisted (via `collector.getState()`):**
+- Which steps have completed
+- Return values from completed steps (for replay)
+- Which approval steps are pending/approved
+- Step metadata (names, keys)
+
+**What IS NOT persisted:**
+- External side effects (payments charged, emails sent, inventory reserved)
+- Database transactions
+- In-flight HTTP requests
+- Local variables outside of step returns
+
+**This is not transactional replay.** When you resume a workflow:
+
+```typescript
+// Original run: steps 1-2 completed, step 3 pending approval
+const result = await workflow(async (step, deps) => {
+  const a = await step(() => deps.fetchA());     // Completed, value cached
+  const b = await step(() => deps.chargeCard()); // Completed, value cached - PAYMENT ALREADY HAPPENED
+  const c = await step(approvalStep);            // Pending - workflow paused here
+  return await step(() => deps.ship());
+}, { onEvent: collector.handleEvent });
+
+// After approval, resumed with state:
+const resumed = await workflow(async (step, deps) => {
+  const a = await step(() => deps.fetchA());     // Replayed from state (no API call)
+  const b = await step(() => deps.chargeCard()); // Replayed from state (no API call)
+  const c = await step(approvalStep);            // Returns injected approval
+  return await step(() => deps.ship());          // Actually executes now
+}, { resumeState: updatedState });
+```
+
+**Key implications:**
+
+1. **Steps are replayed, not re-executed** – On resume, completed steps return their cached values without calling the function again.
+
+2. **Crashes between step completion and state persistence lose data** – If your process dies after `chargeCard()` completes but before you persist `collector.getState()`, you'll retry the payment on resume (unless you use idempotency keys).
+
+3. **External state may have changed** – The inventory you reserved 2 hours ago (before approval) might have expired or been sold. Design for this.
+
+**Recommendation:** For critical workflows, persist state after every step:
+
+```typescript
+const result = await workflow(async (step, deps) => {
+  const payment = await step(() => deps.charge());
+  await persistWorkflowState(workflowId, collector.getState());  // Checkpoint
+
+  const approval = await step(approvalStep);
+  await persistWorkflowState(workflowId, collector.getState());  // Checkpoint
+
+  return await step(() => deps.fulfill());
+}, { onEvent: collector.handleEvent });
+```
+
+**Step Return Value Guidance:**
+
+Since step return values are serialized and persisted, be intentional about what you return:
+
+| Do | Don't |
+|----|-------|
+| Return IDs and minimal immutable data (`{ paymentId, reservationId }`) | Return full domain objects with nested data |
+| Ensure values are JSON-serializable | Return functions, `Date` objects (use ISO strings), or circular references |
+| Store references to secrets (`secretId`) | Store actual secrets, tokens, or PII in state |
+| Version your workflow state schema | Assume old persisted states will deserialize correctly after deploys |
+
+```typescript
+// Good: Minimal, stable return value
+const payment = await step(() => deps.charge({ amount }));
+// payment = { id: 'pay_123', status: 'succeeded' }
+
+// Bad: Large object with sensitive data and unstable shape
+const payment = await step(() => deps.chargeAndReturnEverything({ amount }));
+// payment = { id: '...', card: { last4: '4242', ... }, customer: { email: '...' }, ... }
+```
+
+For long-running workflows, consider adding a `workflowVersion` field to your persisted state and implementing a migration strategy when your step return shapes change between deploys.
 
 ---
 
@@ -672,13 +1051,17 @@ const result = await orderFulfillment(async (saga, deps) => {
 
 2. **Use sagas when you need compensation.** Each step declares both action and undo. Compensations run in reverse order (LIFO).
 
-3. **Use parallel operations for independent calls.** `allAsync` for mandatory data; `allSettledAsync` for best-effort. Add `step.retry()` and `step.withTimeout()` from [Resilience Patterns](/patterns/resilience) when needed.
+3. **Make side-effecting steps idempotent.** Use idempotency keys when combining retries with operations like payment charging. This is non-negotiable for financial operations.
 
-4. **Respect rate limits with `processInBatches`.** Never overwhelm downstream systems. Checkpoint for resume capability.
+4. **Persist state after each step for critical workflows.** Without checkpoints, a crash loses progress and may cause duplicate side effects on restart. For financial or long-running workflows, save `collector.getState()` after every step completion.
 
-5. **Make side-effecting steps idempotent.** Use idempotency keys when combining retries with operations like payment charging.
+5. **Return minimal, stable values from steps.** Step return values are serialized into workflow state. Return IDs and small immutable data—not full objects, secrets, or PII.
 
-6. **Make approval workflows testable.** Inject approvals in tests instead of waiting for humans.
+6. **Use parallel operations for independent calls.** `allAsync` for mandatory data; `allSettledAsync` when you need all errors reported. Add `step.retry()` and `step.withTimeout()` from [Resilience Patterns](/patterns/resilience) when needed.
+
+7. **Respect rate limits with `processInBatches`.** Never overwhelm downstream systems. Use cursor-based checkpoints for resume capability.
+
+8. **Make approval workflows testable.** Inject approvals in tests instead of waiting for humans.
 
 ---
 

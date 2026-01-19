@@ -77,7 +77,7 @@ You add resilience at the *workflow* level, not in business functions. Your busi
 Retry and timeout are built into `awaitly`. Use them at the workflow level:
 
 ```typescript
-import { createWorkflow } from 'awaitly';
+import { createWorkflow } from 'awaitly/workflow';
 
 const loadUserData = createWorkflow({ getUser, getPosts });
 
@@ -393,7 +393,7 @@ The circuit breaker tracks failures and automatically opens when the threshold i
 You can also access timeout metadata:
 
 ```typescript
-import { isStepTimeoutError, getStepTimeoutMeta } from 'awaitly';
+import { isStepTimeoutError, getStepTimeoutMeta } from 'awaitly/workflow';
 
 if (!result.ok && isStepTimeoutError(result.error)) {
   const meta = getStepTimeoutMeta(result.error);
@@ -456,7 +456,7 @@ const result = await syncUserToProvider(async (step) => {
 ## Full Example
 
 ```typescript
-import { createWorkflow } from 'awaitly';
+import { createWorkflow } from 'awaitly/workflow';
 
 // Core function stays clean
 async function getUser(
