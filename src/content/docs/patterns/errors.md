@@ -221,10 +221,10 @@ Can we do better?
 
 ## The Workflow Pattern
 
-Here's where [@jagreehal/workflow](https://github.com/jagreehal/workflow) comes in. It gives you a way to compose Results that looks almost like regular async code:
+Here's where [awaitly](https://github.com/jagreehal/awaitly) comes in. It gives you a way to compose Results that looks almost like regular async code:
 
 ```typescript
-import { createWorkflow, ok, err } from '@jagreehal/workflow';
+import { createWorkflow, ok, err } from 'awaitly';
 
 // Declare dependencies → error union computed automatically
 const loadUserData = createWorkflow({ getUser, getPosts, enrichUser });
@@ -287,7 +287,7 @@ The `step()` function:
 **Alternative:** For dynamic dependencies or one-off workflows, use `run()`:
 
 ```typescript
-import { run } from '@jagreehal/workflow';
+import { run } from 'awaitly';
 
 const result = await run<Output, 'NOT_FOUND' | 'DB_ERROR'>(async (step) => {
   const user = await step(() => getUser({ userId }, deps));
@@ -656,7 +656,7 @@ The key: **your domain errors stay clean, and the boundary layer owns the transl
 ## Full Example
 
 ```typescript
-import { createWorkflow, ok, err, type AsyncResult } from '@jagreehal/workflow';
+import { createWorkflow, ok, err, type AsyncResult } from 'awaitly';
 
 // Types
 type User = { id: string; name: string; email: string };
@@ -736,10 +736,8 @@ The error handling is exhaustive. TypeScript won't let you miss a case.
 
 We've got clean functions, validated input, and explicit error handling. Our code is honest about what can go wrong.
 
-But here's a question: when something *does* go wrong in production, how do you know? When a user reports "it didn't work," how do you trace what happened?
-
-Our functions are clean, but they're opaque. We can't see inside them when they run.
+But real operations span multiple services. What happens when step 2 of 5 fails? How do you roll back what already succeeded?
 
 ---
 
-*Next: [Functions + OpenTelemetry](/patterns/opentelemetry). Making our functions observable.*
+*Next: [Composing Workflows](/patterns/workflows). Orchestrating multi-step operations with sagas, parallel execution, and automatic rollback.*

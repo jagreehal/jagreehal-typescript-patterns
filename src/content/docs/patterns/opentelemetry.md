@@ -3,7 +3,7 @@ title: Functions + OpenTelemetry
 description: Add observability to your functions without cluttering business logic. Distributed tracing with the trace() wrapper pattern.
 ---
 
-*Previously: [Never Throw](/patterns/errors). We made failure explicit with Result types. But when things fail in production, how do we know what happened?*
+*Previously: [Composing Workflows](/patterns/workflows). We orchestrated multi-step operations with sagas and parallel execution. But when things fail in production, how do we know what happened?*
 
 ---
 

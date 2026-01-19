@@ -74,10 +74,10 @@ You add resilience at the *workflow* level, not in business functions. Your busi
 
 ## Resilience in Workflows
 
-Retry and timeout are built into `@jagreehal/workflow`. Use them at the workflow level:
+Retry and timeout are built into `awaitly`. Use them at the workflow level:
 
 ```typescript
-import { createWorkflow } from '@jagreehal/workflow';
+import { createWorkflow } from 'awaitly';
 
 const loadUserData = createWorkflow({ getUser, getPosts });
 
@@ -363,10 +363,10 @@ If a dependency fails repeatedly, retries can make things worse. While the servi
 - Returns fast errors instead of slow timeouts
 - Prevents retry storms from cascading
 
-`@jagreehal/workflow` includes `createCircuitBreaker` for protecting dependencies:
+`awaitly` includes `createCircuitBreaker` for protecting dependencies:
 
 ```typescript
-import { createCircuitBreaker, isCircuitOpenError } from '@jagreehal/workflow';
+import { createCircuitBreaker, isCircuitOpenError } from 'awaitly/circuit-breaker';
 
 // Create a circuit breaker
 const apiBreaker = createCircuitBreaker('external-api', {
@@ -393,7 +393,7 @@ The circuit breaker tracks failures and automatically opens when the threshold i
 You can also access timeout metadata:
 
 ```typescript
-import { isStepTimeoutError, getStepTimeoutMeta } from '@jagreehal/workflow';
+import { isStepTimeoutError, getStepTimeoutMeta } from 'awaitly';
 
 if (!result.ok && isStepTimeoutError(result.error)) {
   const meta = getStepTimeoutMeta(result.error);
@@ -456,7 +456,7 @@ const result = await syncUserToProvider(async (step) => {
 ## Full Example
 
 ```typescript
-import { createWorkflow } from '@jagreehal/workflow';
+import { createWorkflow } from 'awaitly';
 
 // Core function stays clean
 async function getUser(

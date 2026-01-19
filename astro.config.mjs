@@ -29,6 +29,7 @@ export default defineConfig({
             { label: 'Functions Over Classes', slug: 'patterns/functions' },
             { label: 'Validation at the Boundary', slug: 'patterns/validation' },
             { label: 'Typed Errors', slug: 'patterns/errors' },
+            { label: 'Composing Workflows', slug: 'patterns/workflows' },
             { label: 'Observability with OpenTelemetry', slug: 'patterns/opentelemetry' },
             { label: 'Resilience Patterns', slug: 'patterns/resilience' },
           ],
