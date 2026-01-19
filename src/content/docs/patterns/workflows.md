@@ -746,7 +746,7 @@ Refunds over $1000 require manager approval. The customer clicks 'refund', and..
 With awaitly, approval is a first-class step:
 
 ```typescript
-import { createWorkflow, createStepCollector } from 'awaitly/workflow';
+import { createWorkflow, createResumeStateCollector } from 'awaitly/workflow';
 import { createApprovalStep, isPendingApproval } from 'awaitly/hitl';
 import { stringifyState } from 'awaitly/persistence';
 
@@ -767,7 +767,7 @@ const createRefundApprovalStep = (refundId: string) =>
 const refundWorkflow = createWorkflow({ calculateRefund, processRefund });
 
 async function processRefundRequest(refundId: string, orderId: string) {
-  const collector = createStepCollector();
+  const collector = createResumeStateCollector();
   const approvalStep = createRefundApprovalStep(refundId);
 
   const result = await refundWorkflow(async (step, deps) => {
@@ -797,7 +797,7 @@ if (!result.ok && isPendingApproval(result.error)) {
   // Save workflow state for later
   await db.pendingWorkflows.create({
     id: refundId,
-    state: stringifyState(collector.getState()),
+    state: stringifyState(collector.getResumeState()),
   });
 
   // Notify the approver
@@ -891,7 +891,7 @@ const result = await workflow(async (step, deps) => {
 
 The `stringifyState` / `parseState` / `injectApproval` pattern saves **workflow execution state**, not your application's side effects. Understand what's persisted:
 
-**What IS persisted (via `collector.getState()`):**
+**What IS persisted (via `collector.getResumeState()`):**
 - Which steps have completed
 - Return values from completed steps (for replay)
 - Which approval steps are pending/approved
@@ -927,7 +927,7 @@ const resumed = await workflow(async (step, deps) => {
 
 1. **Steps are replayed, not re-executed** – On resume, completed steps return their cached values without calling the function again.
 
-2. **Crashes between step completion and state persistence lose data** – If your process dies after `chargeCard()` completes but before you persist `collector.getState()`, you'll retry the payment on resume (unless you use idempotency keys).
+2. **Crashes between step completion and state persistence lose data** – If your process dies after `chargeCard()` completes but before you persist `collector.getResumeState()`, you'll retry the payment on resume (unless you use idempotency keys).
 
 3. **External state may have changed** – The inventory you reserved 2 hours ago (before approval) might have expired or been sold. Design for this.
 
@@ -936,10 +936,10 @@ const resumed = await workflow(async (step, deps) => {
 ```typescript
 const result = await workflow(async (step, deps) => {
   const payment = await step(() => deps.charge());
-  await persistWorkflowState(workflowId, collector.getState());  // Checkpoint
+  await persistWorkflowState(workflowId, collector.getResumeState());  // Checkpoint
 
   const approval = await step(approvalStep);
-  await persistWorkflowState(workflowId, collector.getState());  // Checkpoint
+  await persistWorkflowState(workflowId, collector.getResumeState());  // Checkpoint
 
   return await step(() => deps.fulfill());
 }, { onEvent: collector.handleEvent });
@@ -1053,7 +1053,7 @@ const result = await orderFulfillment(async (saga, deps) => {
 
 3. **Make side-effecting steps idempotent.** Use idempotency keys when combining retries with operations like payment charging. This is non-negotiable for financial operations.
 
-4. **Persist state after each step for critical workflows.** Without checkpoints, a crash loses progress and may cause duplicate side effects on restart. For financial or long-running workflows, save `collector.getState()` after every step completion.
+4. **Persist state after each step for critical workflows.** Without checkpoints, a crash loses progress and may cause duplicate side effects on restart. For financial or long-running workflows, save `collector.getResumeState()` after every step completion.
 
 5. **Return minimal, stable values from steps.** Step return values are serialized into workflow state. Return IDs and small immutable data—not full objects, secrets, or PII.
 
