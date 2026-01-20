@@ -3420,7 +3420,7 @@ src/
 │   │   └── useUpdateUserMutation.ts
 │   ├── lib/
 │   │   └── user-mappers.ts        # Pure transforms, no side effects
-│   └── index.ts                   # Re-exports public API
+│   └── index.ts                   # Re-exports public API (use named exports, not `export *`—see [Monorepo Patterns](./monorepos#granular-exports-no-barrel-file-hell))
 ├── app/users/
 │   ├── page.tsx                   # Container: UserListContainer
 │   └── [id]/

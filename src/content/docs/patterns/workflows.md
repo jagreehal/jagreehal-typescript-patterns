@@ -1088,6 +1088,8 @@ But raw events aren't enough. We need distributed traces that show the full pict
 
 How do we connect these events to our observability stack?
 
+But first, let's zoom out. We've been composing functions into workflows. There's a broader principle at play here - one that explains *why* this architecture works.
+
 ---
 
-*Next: [Functions + OpenTelemetry](./opentelemetry). Making our workflows observable.*
+*Next: [Composition Patterns](./composition). Building extensible systems from small pieces.*

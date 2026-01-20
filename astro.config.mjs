@@ -30,6 +30,7 @@ export default defineConfig({
             { label: 'Validation at the Boundary', slug: 'patterns/validation' },
             { label: 'Typed Errors', slug: 'patterns/errors' },
             { label: 'Composing Workflows', slug: 'patterns/workflows' },
+            { label: 'Composition Patterns', slug: 'patterns/composition' },
             { label: 'Observability with OpenTelemetry', slug: 'patterns/opentelemetry' },
             { label: 'Resilience Patterns', slug: 'patterns/resilience' },
           ],
@@ -40,6 +41,7 @@ export default defineConfig({
             { label: 'Configuration at Startup', slug: 'patterns/configuration' },
             { label: 'TypeScript Config', slug: 'patterns/typescript-config' },
             { label: 'ESLint Rules', slug: 'patterns/eslint' },
+            { label: 'Monorepo Patterns', slug: 'patterns/monorepos' },
           ],
         },
         {

@@ -470,11 +470,11 @@ ESLint enforces patterns. TypeScript enforces types. Together, they catch violat
 
 ## What's Next
 
-We've established the enforcement layer. TypeScript catches type errors. ESLint catches architectural violations. Together, they ensure patterns are followed.
+We've established the enforcement layer. TypeScript catches type errors. ESLint catches architectural violations. Together, they ensure patterns are followed within a package.
 
-But how do we know our code performs under load? Unit tests verify correctness. Integration tests verify the stack works. What about scalability?
+But what about multiple packages? How do you structure a monorepo for debuggability, shared configuration, and granular exports?
 
 ---
 
-*Next: [Performance Testing](./performance). Prove it works under pressure.*
+*Next: [Monorepo Patterns](./monorepos). Structure packages for debugging, sharing, and tree-shaking.*
 

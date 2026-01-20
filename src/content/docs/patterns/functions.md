@@ -498,7 +498,9 @@ Group only when the functions are a cohesive unit and genuinely travel together 
    function createUser(args, deps: { db, logger }) { }
    ```
 
-3. **Factory at the boundary.** Wire deps once, expose clean API.
+3. **Trust validated input.** Core functions don't re-validate args—that's the boundary's job. See [Validation at the Boundary](./validation).
+
+4. **Factory at the boundary.** Wire deps once, expose clean API.
 
 The pattern: `fn(args, deps)`
 

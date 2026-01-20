@@ -555,10 +555,11 @@ Here's a complete, copy-paste-ready spec file integrating all patterns from this
 ## Tech Stack
 
 - TypeScript 5.x with strict mode
-- Node.js 22+
+- Node.js 24+
 - Vitest for testing
 - Zod for validation
 - awaitly for Result types and workflows
+- autotel for tracing
 
 ## Commands
 

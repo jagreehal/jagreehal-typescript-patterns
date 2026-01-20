@@ -3,7 +3,7 @@ title: Performance Testing
 description: Use load tests to find bottlenecks and chaos tests to verify resilience patterns work under pressure.
 ---
 
-*Previously: [Enforcing Patterns with ESLint](./eslint). We can enforce patterns. But how do we know our code performs under load?*
+*Previously: [Monorepo Patterns](./monorepos). We structured our packages. Now how do we prove they perform under load?*
 
 ---
 

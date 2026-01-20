@@ -112,13 +112,31 @@ If any required variable is missing or invalid, the app fails fast at startup wi
 
 ```mermaid
 graph TD
-    A[Startup Boundary<br/>resolve validates all env vars<br/>returns typed config<br/>fails fast if invalid] --> B[Business Functions<br/>receive typed config via deps<br/>trust that values are valid<br/>no validation needed]
-    
+    A[Startup Boundary<br/>resolve validates all env vars<br/>returns typed config<br/>fails fast if invalid] --> B[Composition Root<br/>config becomes part of deps<br/>wired into services] --> C[Business Functions<br/>receive config via deps<br/>trust that values are valid]
+
     style A fill:#475569,stroke:#0f172a,stroke-width:2px,color:#fff
     style B fill:#64748b,stroke:#0f172a,stroke-width:2px,color:#fff
-    
+    style C fill:#94a3b8,stroke:#0f172a,stroke-width:2px,color:#0f172a
+
     linkStyle 0 stroke:#0f172a,stroke-width:3px
+    linkStyle 1 stroke:#0f172a,stroke-width:3px
 ```
+
+Validated config flows through your [Composition Root](./functions#where-does-this-live), where it becomes part of `deps`:
+
+```typescript
+// main.ts (Composition Root)
+const config = resolve({ /* ... */ });
+
+const deps = {
+  db: createDb(config.DATABASE_URL),
+  logger: createLogger({ level: config.LOG_LEVEL }),
+};
+
+const userService = createUserService({ deps });
+```
+
+Functions never read `process.env` directly—they receive typed config through deps.
 
 ---
 
