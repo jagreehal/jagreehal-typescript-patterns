@@ -3,7 +3,7 @@ title: Functions + OpenTelemetry
 description: Add observability to your functions without cluttering business logic. Distributed tracing with the trace() wrapper pattern.
 ---
 
-*Previously: [Composing Workflows](/patterns/workflows). We orchestrated multi-step operations with sagas and parallel execution. But when things fail in production, how do we know what happened?*
+*Previously: [Composing Workflows](./workflows). We orchestrated multi-step operations with sagas and parallel execution. But when things fail in production, how do we know what happened?*
 
 ---
 
@@ -71,7 +71,7 @@ Which produces:
 
 Now you can filter logs by `userId`, count actions, and build dashboards.
 
-**Why Pino?** Use [Pino](https://github.com/pinojs/pino) for structured logging. It's the fastest Node.js logger (benchmarks show 5x+ faster than Winston) and outputs JSON by default. For a complete setup guide, see [Structured Logging with Pino](https://arrangeactassert.com/posts/structured-logging-with-pino/)—it covers:
+**Why Pino?** Use [Pino](https://github.com/pinojs/pino) for structured logging. It's the fastest Node.js logger (benchmarks show 5x+ faster than Winston) and outputs JSON by default. For a complete setup guide, see [Structured Logging with Pino](https://arrangeactassert.com/posts/structured-logging-with-pino/) -it covers:
 
 - Child loggers for request context
 - Log levels and when to use each
@@ -214,7 +214,7 @@ sdk.start();
 // ... and you still need to manually create spans in your code
 ```
 
-Tons of boilerplate before you've traced a single function. And auto-instrumentation only traces HTTP/database calls—not your business logic.
+Tons of boilerplate before you've traced a single function. And auto-instrumentation only traces HTTP/database calls -not your business logic.
 
 What if there was a way to get tracing without the setup pain?
 
@@ -425,7 +425,7 @@ graph TD
     linkStyle 0 stroke:#0f172a,stroke-width:3px
 ```
 
-The business function is the **subject**—it produces Results and doesn't know who's watching. The `trace()` wrapper is the **observer**—it watches without interfering.
+The business function is the **subject** -it produces Results and doesn't know who's watching. The `trace()` wrapper is the **observer** -it watches without interfering.
 
 This preserves the **Pure Core** of your application:
 
@@ -842,7 +842,7 @@ The pattern follows **tail sampling**: you decide what to log *after* the span c
 
 Key characteristics of canonical log lines:
 
-- **High cardinality**: Include user IDs, order IDs, trace IDs—fields with many unique values that enable precise queries
+- **High cardinality**: Include user IDs, order IDs, trace IDs -fields with many unique values that enable precise queries
 - **Flat structure**: Use dot-notation (`user.id`, `cart.total_cents`) instead of nested objects for easier querying
 - **Emitted at span end**: All context is available, including duration and final status
 - **One per request**: Set `rootSpansOnly: true` to emit only for root spans
@@ -859,7 +859,7 @@ For a complete working example, see the [autotel canonical logs example](https:/
 2. **Wrap with trace().** Observability is orthogonal to business logic (Observer pattern).
 3. **Use semantic conventions.** Standard attribute names (`user.id`, `http.method`) enable automatic backend correlation.
 4. **Correlate logs and traces.** Include `traceId` and `spanId` in every log message.
-5. **Emit canonical log lines.** One wide event per request with all context—optimize for querying, not writing.
+5. **Emit canonical log lines.** One wide event per request with all context -optimize for querying, not writing.
 6. **Map Result to span status.** ok = success, err = failure.
 7. **Nested traces work automatically.** No manual context passing.
 8. **Tests don't change.** trace() is transparent when tracing is disabled.
@@ -882,4 +882,4 @@ That's what we'll figure out next.
 
 ---
 
-*Next: [Resilience Patterns](/patterns/resilience). Retries, circuit breakers, and timeouts.*
+*Next: [Resilience Patterns](./resilience). Retries, circuit breakers, and timeouts.*

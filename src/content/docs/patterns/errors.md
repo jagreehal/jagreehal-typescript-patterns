@@ -3,7 +3,7 @@ title: Typed Errors
 description: Make failure explicit with Result types instead of throwing exceptions. Composable error handling with railway-oriented programming.
 ---
 
-*Previously: [Validation at the Boundary](/patterns/validation). We learned to guard against bad input. But what about operations that fail?*
+*Previously: [Validation at the Boundary](./validation). We learned to guard against bad input. But what about operations that fail?*
 
 ---
 
@@ -47,7 +47,7 @@ Which of these might fail? All of them? Some of them? What errors can they produ
 
 You can't tell from the code. The only way to know is to chase down every function and read its implementation. And hope they don't call other functions that throw.
 
-It's Friday afternoon. Production is failing. The error log says `Error: User not found`. You search the codebase: 47 places throw that exact message. Which one is it? The stack trace points to `processOrder` line 3, but that's the `getUser` call—you need to find which *internal* path threw. You spend 20 minutes reading code before finding the culprit.
+It's Friday afternoon. Production is failing. The error log says `Error: User not found`. You search the codebase: 47 places throw that exact message. Which one is it? The stack trace points to `processOrder` line 3, but that's the `getUser` call -you need to find which *internal* path threw. You spend 20 minutes reading code before finding the culprit.
 
 ### 2. Throws Bypass Composition
 
@@ -79,7 +79,7 @@ When `getUser` throws, what happened?
 
 They're all just `Error`. You have to inspect the message string or check `instanceof`, and hope the implementation is consistent.
 
-Your handler catches all exceptions and returns HTTP 500. But "user not found" isn't a server error—it's a 404. So you add string matching:
+Your handler catches all exceptions and returns HTTP 500. But "user not found" isn't a server error -it's a 404. So you add string matching:
 
 ```typescript
 catch (error) {
@@ -144,23 +144,23 @@ graph LR
 
 ---
 
-## A Minimal Result Type
+## The Result Type
 
-You don't need a library. The type is simple:
+[awaitly](https://github.com/jagreehal/awaitly) provides a `Result<T, E>` type and utilities:
 
 ```typescript
+import { ok, err, type Result, type AsyncResult } from 'awaitly';
+
+// Result<T, E> is either success or failure
 type Result<T, E> =
   | { ok: true; value: T }
   | { ok: false; error: E };
 
-// For async functions, just wrap in Promise
+// AsyncResult<T, E> is just Promise<Result<T, E>>
 type AsyncResult<T, E> = Promise<Result<T, E>>;
-
-const ok = <T>(value: T): Result<T, never> => ({ ok: true, value });
-const err = <E>(error: E): Result<never, E> => ({ ok: false, error });
 ```
 
-That's it. `Result<T, E>` for sync, `AsyncResult<T, E>` for async. Now your functions look like this:
+Now your functions look like this:
 
 ```typescript
 async function getUser(
@@ -343,7 +343,7 @@ const config = await step.try(
 config.whatever.you.want;  // No error, but will crash at runtime
 ```
 
-When you install [@total-typescript/ts-reset](/patterns/typescript-config), `JSON.parse` returns `unknown` instead. Now TypeScript *forces* you to validate:
+When you install [@total-typescript/ts-reset](./typescript-config), `JSON.parse` returns `unknown` instead. Now TypeScript *forces* you to validate:
 
 ```typescript
 // With ts-reset: parsed is `unknown` - validation required
@@ -357,7 +357,7 @@ const config = await step.try(
 // config is now fully typed via Zod schema
 ```
 
-This creates a complete safety chain: `step.try()` handles the exception, `ts-reset` forces validation, and Zod provides the types. See [TypeScript Config](/patterns/typescript-config) for setup.
+This creates a complete safety chain: `step.try()` handles the exception, `ts-reset` forces validation, and Zod provides the types. See [TypeScript Config](./typescript-config) for setup.
 
 **For Result-returning functions:** Use `step.fromResult()` to preserve typed errors:
 
@@ -377,11 +377,178 @@ const response = await step.fromResult(
 );
 ```
 
+### Outside Workflows: from, fromPromise, tryAsync
+
+Inside workflows, use `step.try()`. Outside workflows, use these standalone utilities:
+
+```typescript
+import { from, fromPromise, tryAsync } from 'awaitly';
+
+// Wrap sync throwing code
+const parsed = from(() => JSON.parse(jsonString));
+// Result<unknown, Error>
+
+// Wrap async throwing code
+const response = await fromPromise(fetch('/api/data'));
+// Result<Response, Error>
+
+// Wrap with custom error mapping
+const data = await tryAsync(
+  () => fetch('/api').then(r => r.json()),
+  (thrown) => ({ type: 'FETCH_FAILED' as const, cause: thrown })
+);
+// Result<unknown, { type: 'FETCH_FAILED'; cause: unknown }>
+```
+
+---
+
+## Result Utilities
+
+awaitly provides utilities for transforming and combining Results without manual if-checks.
+
+### Transforming Results
+
+```typescript
+import { map, mapError, match } from 'awaitly';
+
+const userResult = await getUser({ userId: '123' }, deps);
+
+// Transform the value (if ok)
+const nameResult = map(userResult, user => user.name);
+// Result<string, 'NOT_FOUND' | 'DB_ERROR'>
+
+// Transform the error (if err)
+const apiError = mapError(userResult, error => ({
+  code: 'USER_ERROR',
+  cause: error
+}));
+
+// Pattern match on ok/err
+const message = match(userResult, {
+  ok: (user) => `Hello, ${user.name}!`,
+  err: (error) => `Failed: ${error}`,
+});
+```
+
+### Chaining Multiple Operations with run()
+
+For multi-step operations, `run()` provides cleaner DX than nested `andThen` calls:
+
+```typescript
+import { run } from 'awaitly';
+
+// Flat, readable code with automatic early exit on errors
+const result = await run(async (step) => {
+  const user = await step(() => getUser({ userId }, deps));
+  const posts = await step(() => getPosts({ userId: user.id }, deps));
+  const comments = await step(() => getComments({ postIds: posts.map(p => p.id) }, deps));
+  return { user, posts, comments };
+});
+// Result<{ user, posts, comments }, 'NOT_FOUND' | 'DB_ERROR' | 'FETCH_ERROR' | ...>
+```
+
+Compare to nested `andThen` (avoid this):
+
+```typescript
+// Nested callbacks - harder to read and modify
+const result = andThen(userResult, user =>
+  andThen(getPosts({ userId: user.id }, deps), posts =>
+    andThen(getComments({ postIds: posts.map(p => p.id) }, deps), comments =>
+      ok({ user, posts, comments })
+    )
+  )
+);
+```
+
+**Use `run()` for multi-step operations.** Reserve `andThen` for single-step transformations where you're already holding a Result.
+
+### Unwrapping Results
+
+When you're confident the Result is ok, or want a default:
+
+```typescript
+import { unwrap, unwrapOr, unwrapOrElse } from 'awaitly';
+
+// Throws if err (use sparingly - at boundaries)
+const user = unwrap(userResult);
+
+// Returns default if err
+const user = unwrapOr(userResult, guestUser);
+
+// Compute default from error
+const user = unwrapOrElse(userResult, (error) => {
+  logger.warn('Failed to fetch user', { error });
+  return createGuestUser();
+});
+```
+
+### Parallel Operations
+
+Run operations in parallel inside workflows:
+
+```typescript
+import { allAsync } from 'awaitly';
+
+const result = await run(async (step) => {
+  // Parallel fetch - all must succeed
+  const [user, posts, settings] = await step(() => allAsync([
+    getUser({ userId }, deps),
+    getPosts({ userId }, deps),
+    getSettings({ userId }, deps),
+  ]));
+  // If any fails, workflow exits early with that error
+
+  return { user, posts, settings };
+});
+```
+
+Outside workflows, handle the Result manually:
+
+```typescript
+const result = await allAsync([op1(), op2(), op3()]);
+
+if (result.ok) {
+  const [a, b, c] = result.value;
+} else {
+  // First error encountered
+  console.log(result.error);
+}
+```
+
+**Collect all results** (don't stop on first error):
+
+```typescript
+import { allSettledAsync, partition } from 'awaitly';
+
+const settled = await allSettledAsync([op1(), op2(), op3()]);
+// Always succeeds - contains all outcomes
+
+const [successes, failures] = partition(settled.value);
+// successes: values from ok results
+// failures: errors from err results
+```
+
+### Type Helpers
+
+Extract error types from functions:
+
+```typescript
+import type { ErrorOf, Errors } from 'awaitly';
+
+// Extract error type from a single function
+type UserError = ErrorOf<typeof getUser>;
+// 'NOT_FOUND' | 'DB_ERROR'
+
+// Union errors from multiple functions
+type AllErrors = Errors<[typeof getUser, typeof getPosts, typeof chargeCard]>;
+// 'NOT_FOUND' | 'DB_ERROR' | 'FETCH_ERROR' | 'CARD_DECLINED'
+```
+
 ---
 
 ## Error Types That Make Sense
 
-Here are a few patterns for defining errors:
+Here are patterns for defining errors, from simplest to most powerful:
 
 ### String Literals (Simple)
 
@@ -418,6 +585,105 @@ type AppError = (typeof Errors)[keyof typeof Errors];
 
 // Now you can use Errors.NOT_FOUND at runtime
 return err(Errors.NOT_FOUND);
+```
+
+### TaggedError Classes (Recommended)
+
+For richer errors with proper stack traces and pattern matching, [awaitly](https://github.com/jagreehal/awaitly) provides `TaggedError`:
+
+```typescript
+import { TaggedError, ok, err, type AsyncResult } from 'awaitly';
+
+// Define error classes with typed props
+class UserNotFound extends TaggedError("UserNotFound")<{
+  userId: string;
+}> {}
+
+class InsufficientFunds extends TaggedError("InsufficientFunds", {
+  message: (p: { required: number; available: number }) =>
+    `Need ${p.required}, have ${p.available}`,
+})<{ required: number; available: number }> {}
+
+class DependencyFailed extends TaggedError("DependencyFailed")<{
+  service: string;
+  retryable: boolean;
+  cause?: unknown;
+}> {}
+
+// Create instances with type-safe props
+const error = new UserNotFound({ userId: "123" });
+error._tag;    // "UserNotFound"
+error.userId;  // "123"
+error.message; // "UserNotFound"
+
+// They're real Error instances
+error instanceof Error; // true
+```
+
+**Why TaggedError over plain objects:**
+
+- **Real stack traces**: Unlike `{ type: 'NOT_FOUND' }`, you get proper debugging
+- **Automatic discrimination**: The `_tag` property enables exhaustive matching
+- **Custom messages**: Define message templates from props
+- **Error chaining**: Pass `cause` to preserve the original error
+- **instanceof works**: Use familiar error handling patterns
+
+**Pattern matching** replaces verbose switch statements:
+
+```typescript
+type TransferError = UserNotFound | InsufficientFunds | DependencyFailed;
+
+// Exhaustive matching - TypeScript ensures all cases handled
+const message = TaggedError.match(error, {
+  UserNotFound: (e) => `User ${e.userId} not found`,
+  InsufficientFunds: (e) => `Need ${e.required}, have ${e.available}`,
+  DependencyFailed: (e) => `${e.service} unavailable`,
+});
+
+// Partial matching with fallback
+const userMessage = TaggedError.matchPartial(
+  error,
+  { InsufficientFunds: (e) => `Add ${e.required - e.available} more` },
+  (e) => `Operation failed: ${e.message}`
+);
+```
+
+**In workflows**, TaggedErrors compose naturally:
+
+```typescript
+async function fetchUser(userId: string): AsyncResult<User, UserNotFound | DependencyFailed> {
+  if (userId === "404") {
+    return err(new UserNotFound({ userId }));
+  }
+  return ok({ id: userId, name: "Test User" });
+}
+
+const result = await workflow(async (step) => {
+  const user = await step(() => fetchUser(args.userId));
+
+  if (balance.available < args.amount) {
+    return err(new InsufficientFunds({
+      required: args.amount,
+      available: balance.available,
+    }));
+  }
+
+  return ok({ user, balance });
+});
+```
+
+**API handlers** become clean with pattern matching:
+
+```typescript
+if (!result.ok) {
+  return TaggedError.match(result.error, {
+    UserNotFound: (e) => json(404, { error: "User not found", userId: e.userId }),
+    InsufficientFunds: (e) => json(400, { error: "Insufficient funds", ...e }),
+    DependencyFailed: (e) => e.retryable
+      ? json(503, { error: "Service unavailable", retryAfter: 30 })
+      : json(500, { error: "Internal error" }),
+  });
+}
 ```
 
 ---
@@ -493,11 +759,11 @@ function collapseToHttpError(error: DetailedError): HttpError {
 }
 ```
 
-**The principle:** Preserve detail for observability ([OpenTelemetry](/patterns/opentelemetry) records the specific `DB_TIMEOUT`), but simplify for API consumers. Your traces show exactly what failed; your API returns clean categories.
+**The principle:** Preserve detail for observability ([OpenTelemetry](./opentelemetry) records the specific `DB_TIMEOUT`), but simplify for API consumers. Your traces show exactly what failed; your API returns clean categories.
 
 ---
 
-**What about transient failures?** Database connections dropping, HTTP timeouts, service hiccups? Those deserve their own treatment. We'll cover retry and timeout patterns in [Resilience Patterns](/patterns/resilience).
+**What about transient failures?** Database connections dropping, HTTP timeouts, service hiccups? Those deserve their own treatment. We'll cover retry and timeout patterns in [Resilience Patterns](./resilience).
 
 ---
 
@@ -592,64 +858,56 @@ Exceptions bubble up from infrastructure, get caught and converted to Results, a
 
 ## Mapping Results to HTTP
 
-The handler layer translates Results to HTTP responses. Here's a reusable pattern:
-
-```typescript
-// A standard error response shape
-type ErrorResponse = { error: string; code: string; details?: unknown };
-
-// Map domain errors to HTTP status codes
-const errorToStatus: Record<string, number> = {
-  NOT_FOUND: 404,
-  UNAUTHORIZED: 401,
-  FORBIDDEN: 403,
-  VALIDATION_FAILED: 400,
-  CONFLICT: 409,
-  // Default to 500 for unknown errors
-};
-
-function resultToResponse<T, E extends string>(
-  result: Result<T, E>,
-  res: Response
-): Response {
-  if (result.ok) {
-    return res.status(200).json(result.value);
-  }
-
-  const status = errorToStatus[result.error] ?? 500;
-  const response: ErrorResponse = {
-    error: result.error,
-    code: result.error,
-  };
-
-  return res.status(status).json(response);
-}
-```
-
-Now handlers become simple:
+With TaggedError, use `TaggedError.match()` for clean, exhaustive handling:
 
 ```typescript
 app.get('/users/:id', async (req, res) => {
-  const result = await getUser({ userId: req.params.id }, deps);
-  return resultToResponse(result, res);
+  const result = await getUserWithPosts(async (step) => {
+    const user = await step(() => getUser({ userId: req.params.id }, deps));
+    const posts = await step(() => getPosts({ userId: user.id }, deps));
+    return { user, posts };
+  });
+
+  if (!result.ok) {
+    return TaggedError.match(result.error, {
+      UserNotFound: (e) => res.status(404).json({
+        error: 'User not found',
+        userId: e.userId
+      }),
+      DbError: (e) => res.status(500).json({
+        error: 'Database error',
+        operation: e.operation
+      }),
+      FetchError: (e) => res.status(500).json({
+        error: 'Fetch failed',
+        resource: e.resource
+      }),
+    });
+  }
+
+  return res.json(result.value);
 });
 ```
 
-For richer errors (discriminated unions), extend the pattern:
+**For simple string errors**, a lookup table works:
 
 ```typescript
-type RichError =
-  | { type: 'NOT_FOUND'; resource: string }
-  | { type: 'VALIDATION'; field: string; message: string };
+const errorToStatus: Record<string, number> = {
+  NOT_FOUND: 404,
+  UNAUTHORIZED: 401,
+  VALIDATION_FAILED: 400,
+};
 
-function richErrorToResponse(error: RichError, res: Response): Response {
-  switch (error.type) {
-    case 'NOT_FOUND':
-      return res.status(404).json({ error: `${error.resource} not found` });
-    case 'VALIDATION':
-      return res.status(400).json({ error: error.message, field: error.field });
+app.get('/users/:id', async (req, res) => {
+  const result = await getUser({ userId: req.params.id }, deps);
+
+  if (!result.ok) {
+    const status = errorToStatus[result.error] ?? 500;
+    return res.status(status).json({ error: result.error });
   }
-}
+
+  return res.json(result.value);
+});
 ```
 
 The key: **your domain errors stay clean, and the boundary layer owns the translation.**
@@ -658,81 +916,84 @@ The key: **your domain errors stay clean, and the boundary layer owns the transl
 
 ## Full Example
 
+Using TaggedError for the cleanest DX:
+
 ```typescript
-import { ok, err, type AsyncResult } from 'awaitly';
+import { TaggedError, ok, err, type AsyncResult } from 'awaitly';
 import { createWorkflow } from 'awaitly/workflow';
 
-// Types
+// Define errors with context
+class UserNotFound extends TaggedError('UserNotFound')<{ userId: string }> {}
+class DbError extends TaggedError('DbError')<{ operation: string }> {}
+class FetchError extends TaggedError('FetchError')<{ resource: string }> {}
+
 type User = { id: string; name: string; email: string };
 type Post = { id: string; title: string };
 
-// Core functions return Results
+// Core functions return Results with TaggedErrors
 async function getUser(
   args: { userId: string },
   deps: { db: Database }
-): AsyncResult<User, 'NOT_FOUND' | 'DB_ERROR'> {
+): AsyncResult<User, UserNotFound | DbError> {
   try {
     const user = await deps.db.findUser(args.userId);
-    return user ? ok(user) : err('NOT_FOUND');
+    return user ? ok(user) : err(new UserNotFound({ userId: args.userId }));
   } catch {
-    return err('DB_ERROR');
+    return err(new DbError({ operation: 'findUser' }));
   }
 }
 
 async function getPosts(
   args: { userId: string },
   deps: { db: Database }
-): AsyncResult<Post[], 'FETCH_ERROR'> {
+): AsyncResult<Post[], FetchError> {
   try {
     const posts = await deps.db.findPostsByUser(args.userId);
     return ok(posts);
   } catch {
-    return err('FETCH_ERROR');
+    return err(new FetchError({ resource: 'posts' }));
   }
 }
 
 // Compose with createWorkflow
-const getUserWithPosts = createWorkflow({ getUser, getPosts, enrichUser });
+const getUserWithPosts = createWorkflow({ getUser, getPosts });
 
-// Handler: map Result to HTTP
+// Handler: clean error handling with pattern matching
 app.get('/users/:id', async (req, res) => {
   const result = await getUserWithPosts(async (step) => {
     const user = await step(() => getUser({ userId: req.params.id }, deps));
     const posts = await step(() => getPosts({ userId: user.id }, deps));
-    const enriched = await step(() => enrichUser({ user, posts }, deps));
-
-    return { user: enriched, posts };
+    return { user, posts };
   });
 
   if (!result.ok) {
-    switch (result.error) {
-      case 'NOT_FOUND':
-        return res.status(404).json({ error: 'User not found' });
-      case 'DB_ERROR':
-      case 'FETCH_ERROR':
-      case 'ENRICHMENT_FAILED':
-        return res.status(500).json({ error: 'Internal error' });
-      default:
-        // UnexpectedError case
-        return res.status(500).json({ error: 'Unexpected error' });
-    }
+    return TaggedError.match(result.error, {
+      UserNotFound: (e) => res.status(404).json({ error: 'User not found', userId: e.userId }),
+      DbError: (e) => res.status(500).json({ error: 'Database error', operation: e.operation }),
+      FetchError: (e) => res.status(500).json({ error: 'Fetch failed', resource: e.resource }),
+    });
   }
 
   return res.json(result.value);
 });
 ```
 
-The error handling is exhaustive. TypeScript won't let you miss a case.
+**What makes this clean:**
+- Errors carry context (userId, operation, resource)
+- `TaggedError.match()` is exhaustive - add a new error type and TypeScript errors until you handle it
+- No verbose switch statements
+- Stack traces work properly for debugging
 
 ---
 
 ## The Rules
 
 1. **Business functions return Results.** Make failure explicit in the type.
-2. **Use createWorkflow() for composition.** Avoid manual if-checks everywhere.
-3. **Use step.try() for throwing code.** Catch and map exceptions.
-4. **Throw only for impossible states.** Programmer errors, corrupted state.
-5. **Map Results to HTTP at the boundary.** The handler decides what errors mean.
+2. **Use `run()` or `createWorkflow()` for composition.** Write flat async/await code, not nested callbacks.
+3. **Use TaggedError for rich errors.** Get stack traces, pattern matching, and context.
+4. **Use `step.try()` for throwing code.** Bridge exceptions into your Result pipeline.
+5. **Use `TaggedError.match()` at boundaries.** Exhaustive, clean error-to-response mapping.
+6. **Throw only for impossible states.** Programmer errors, corrupted state.
 
 ---
 
@@ -744,4 +1005,4 @@ But real operations span multiple services. What happens when step 2 of 5 fails?
 
 ---
 
-*Next: [Composing Workflows](/patterns/workflows). Orchestrating multi-step operations with sagas, parallel execution, and automatic rollback.*
+*Next: [Composing Workflows](./workflows). Orchestrating multi-step operations with sagas, parallel execution, and automatic rollback.*

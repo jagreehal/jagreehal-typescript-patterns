@@ -3,7 +3,7 @@ title: What We've Built
 description: A complete architecture for TypeScript applications with testability, observability, and enforcement built in.
 ---
 
-*Previously: [Performance Testing](/patterns/performance). The final piece: proving it works under pressure.*
+*Previously: [Performance Testing](./performance). The final piece: proving it works under pressure.*
 
 ---
 
@@ -243,5 +243,5 @@ The foundation is set. Build on it.
 
 ---
 
-*Start from the beginning: [Why This Pattern Exists](/patterns/testing)*
+*Start from the beginning: [Why This Pattern Exists](./testing)*
 

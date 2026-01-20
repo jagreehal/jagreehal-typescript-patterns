@@ -3,7 +3,7 @@ title: Functions Over Classes
 description: Learn the fn(args, deps) pattern for explicit dependency injection, making your code testable and composable.
 ---
 
-*Previously: [Why This Pattern Exists](/patterns/testing). We saw how testability drives design. Now let's see the pattern itself.*
+*Previously: [Why This Pattern Exists](./testing). We saw how testability drives design. Now let's see the pattern itself.*
 
 I want to talk about dependency injection.
 
@@ -45,7 +45,7 @@ This looks fine at first. But something subtle is happening here.
 
 Look at `getUser`. It only needs `db` and `logger`. But to test it, you have to satisfy the *entire* constructor, including `cache`, `mailer`, and `metrics` that it doesn't use.
 
-A new developer joins. They ask: "What does `getUser` need?" You point to the constructor: five dependencies. They mock all five. The test passes. Two months later, someone adds `this.metrics.increment('user_fetched')` inside `getUser`. The test still passes—but now it's lying. It doesn't verify that metric increment ever happened, because the mock was set up blindly.
+A new developer joins. They ask: "What does `getUser` need?" You point to the constructor: five dependencies. They mock all five. The test passes. Two months later, someone adds `this.metrics.increment('user_fetched')` inside `getUser`. The test still passes -but now it's lying. It doesn't verify that metric increment ever happened, because the mock was set up blindly.
 
 As the class grows, the constructor accumulates more and more dependencies. Every method inherits access to everything, whether it needs it or not. You end up with a "god object" where any method might touch any dependency via `this`.
 
@@ -96,7 +96,7 @@ A new developer joins. They ask: "What does `getUser` need?" You point to the ty
 
 No hidden state. No constructor that accumulates junk. The function declares its contract explicitly.
 
-Yes, this is just functions + closures—and that's a feature, not a workaround.
+Yes, this is just functions + closures -and that's a feature, not a workaround.
 
 This is the core pattern:
 
@@ -184,13 +184,13 @@ You might ask: 'What about request-scoped context like trace IDs, user info, or 
 For **observability context** (trace/span IDs, correlation IDs, baggage, span attributes), you don't need a third parameter. Keep domain functions pure and layer telemetry on top with a wrapper.
 
 ```ts
-// domain/create-user.ts — pure business logic
+// domain/create-user.ts -pure business logic
 export async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
   const user = await deps.db.users.insert(args);
   return user;
 }
 
-// app/create-user.traced.ts — observability layer
+// app/create-user.traced.ts -observability layer
 import { trace } from 'autotel';
 import { createUser } from '../domain/create-user';
 
@@ -216,9 +216,9 @@ This keeps the core message clean:
 - **Dependency injection** (`fn(args, deps)`) is for correctness and testability
 - **Observability** is layered on, not baked in
 
-→ See [OpenTelemetry patterns](/patterns/opentelemetry) for the complete tracing approach.
+→ See [OpenTelemetry patterns](./opentelemetry) for the complete tracing approach.
 
-If context changes business behavior (e.g. tenant isolation or authorization), model it explicitly in `args` or as request-scoped `deps`—not as "extra data."
+If context changes business behavior (e.g. tenant isolation or authorization), model it explicitly in `args` or as request-scoped `deps` -not as "extra data."
 
 ---
 
@@ -335,7 +335,7 @@ class UserService {
 }
 ```
 
-You're reviewing a PR that changes `sendWelcomeEmail` to require an API key. The PR looks simple: add `apiKey` to the constructor, use it in `sendWelcomeEmail`. But wait—what calls `sendWelcomeEmail`? You grep for it: called from `createUser`, `reactivateUser`, and `inviteUser`. Do all those callers have the context needed for this new API call? You can't tell from the PR. You have to trace through every method that touches `this`.
+You're reviewing a PR that changes `sendWelcomeEmail` to require an API key. The PR looks simple: add `apiKey` to the constructor, use it in `sendWelcomeEmail`. But wait -what calls `sendWelcomeEmail`? You grep for it: called from `createUser`, `reactivateUser`, and `inviteUser`. Do all those callers have the context needed for this new API call? You can't tell from the PR. You have to trace through every method that touches `this`.
 
 With functions, collaborators must be explicit:
 
@@ -386,7 +386,7 @@ When you end up with many related functions (5+), you have two valid ways to inj
 - **Inject individually** (optimizes for precision: minimal deps per consumer)
 - **Inject as a grouped object** (optimizes for wiring: one thing to pass around)
 
-This choice is not about type safety—you can export explicit input/output types either way. It's about how your codebase uses these functions.
+This choice is not about type safety -you can export explicit input/output types either way. It's about how your codebase uses these functions.
 
 > Pick one approach per module. If grouping starts to feel like a "god object", split it.
 
@@ -418,7 +418,7 @@ export type CreateUserResult = Awaited<ReturnType<CreateUserFn>>;
 export type GetUserArgs = Parameters<GetUserFn>[0];
 export type CreateUserArgs = Parameters<CreateUserFn>[0];
 
-// notification-handler.ts — only needs sendWelcomeEmail
+// notification-handler.ts -only needs sendWelcomeEmail
 export type NotificationHandlerDeps = {
   sendWelcomeEmail: SendWelcomeEmailFn;
   // doesn't need getUser or createUser
@@ -456,7 +456,7 @@ export type UserFns = typeof userFns;
 export type GetUserFn = typeof userFns.getUser;
 export type GetUserResult = Awaited<ReturnType<GetUserFn>>;
 
-// user-router.ts — needs most user functions
+// user-router.ts -needs most user functions
 export type UserRouterDeps = {
   userFns: UserFns; // simplest
   // If you really want to narrow the surface area, you can use Pick<UserFns, ...>
@@ -485,7 +485,7 @@ Group only when the functions are a cohesive unit and genuinely travel together 
 
 1. **Per-function deps.** Avoid god objects. Each function declares exactly what it needs. Group related functions only when they're cohesive and always used together.
 
-2. **Inject what you want to mock.** infrastructure (db, logger) and collaborators. Import pure utilities you'll never mock (think `lodash`, `slugify`, math helpers—only inject things that hit network, disk, or the clock).
+2. **Inject what you want to mock.** infrastructure (db, logger) and collaborators. Import pure utilities you'll never mock (think `lodash`, `slugify`, math helpers -only inject things that hit network, disk, or the clock).
 
    Don't inject pure functions:
    ```typescript
@@ -767,9 +767,11 @@ The rule is pragmatic. It ignores single-parameter functions, constructors, and 
 
 ### The NestJS Case
 
-Many developers use decorator-heavy frameworks like NestJS. You don't have to abandon the `fn(args, deps)` pattern—use NestJS classes as **thin wrappers**:
+Many developers use decorator-heavy frameworks like NestJS. You don't have to abandon the `fn(args, deps)` pattern -use NestJS classes as **thin wrappers**:
 
 ```typescript
+import { type Result } from 'awaitly';
+
 // Pure function - your actual logic
 async function createUser(
   args: CreateUserInput,
@@ -832,7 +834,7 @@ class UserServiceImpl {
 const userService = container.resolve(UserServiceImpl);
 ```
 
-The pattern works with tsyringe, InversifyJS, or any DI container. The key is that your *core functions* remain pure and decorator-free—only the wiring layer uses framework-specific features.
+The pattern works with tsyringe, InversifyJS, or any DI container. The key is that your *core functions* remain pure and decorator-free -only the wiring layer uses framework-specific features.
 
 ---
 
@@ -840,7 +842,7 @@ The pattern works with tsyringe, InversifyJS, or any DI container. The key is th
 
 Critics sometimes worry that creating many small objects (`args` objects, `deps` bags, factory functions) increases garbage collection pressure.
 
-**The reality:** Modern V8 engines (Orinoco) use generational garbage collection. Objects that die young—like the temporary objects created during request handling—are reclaimed almost instantly. V8 is *extremely* efficient at this.
+**The reality:** Modern V8 engines (Orinoco) use generational garbage collection. Objects that die young -like the temporary objects created during request handling -are reclaimed almost instantly. V8 is *extremely* efficient at this.
 
 For I/O-bound web applications:
 
@@ -876,5 +878,5 @@ That's what we'll figure out next.
 
 ---
 
-*Next: [Validation at the Boundary](/patterns/validation). Where Zod and schema validation fit into this world.*
+*Next: [Validation at the Boundary](./validation). Where Zod and schema validation fit into this world.*
 

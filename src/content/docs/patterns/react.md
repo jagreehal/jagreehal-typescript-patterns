@@ -19,7 +19,7 @@ The goal: **keep reusable React code independent of routing/rendering frameworks
 - **Split containers from views.** Components that read URL / fetch / subscribe are separated from presentational components. **Rule:** Reusable folders (`components/`, `hooks/`, `queries/`, `lib/`) are framework-import-forbidden. Containers live only at the framework boundary (`app/`, `pages/`, `routes/`).
 - **Error boundaries + Suspense are not optional.**
 - **Every component has a paired Storybook story.**
-- **Testing is value-driven.** Don't test for the sake of it—test where it reduces real risk.
+- **Testing is value-driven.** Don't test for the sake of it -test where it reduces real risk.
 - **Tailwind default.** Favor composability and consistent UI patterns.
 
 ---
@@ -62,7 +62,7 @@ The goal: **keep reusable React code independent of routing/rendering frameworks
 Teams still accidentally couple to `useRouter`, `navigate`, `notFound`, etc. because there's no explicit adapter surface. Define framework-agnostic interfaces and implement them at the boundary:
 
 ```ts
-// lib/platform/ports.ts — framework-agnostic ports
+// lib/platform/ports.ts -framework-agnostic ports
 export type NavigationApi = {
   push: (href: string) => void;
   replace?: (href: string) => void;
@@ -80,7 +80,7 @@ export type Analytics = {
 ```
 
 ```ts
-// adapters/navigation.ts — wrap whatever router your framework gives you
+// adapters/navigation.ts -wrap whatever router your framework gives you
 type RouterLike = {
   push: (href: string) => void;
   replace?: (href: string) => void;
@@ -120,7 +120,7 @@ export function UserProfile() {
 ```tsx
 // ✅ GOOD: Container handles framework + data, View is pure
 
-// UserProfileView.tsx — pure, framework-agnostic, easy to test/story
+// UserProfileView.tsx -pure, framework-agnostic, easy to test/story
 type UserProfileViewProps = {
   user: User;
   handlers: {
@@ -142,7 +142,7 @@ export function UserProfileView({ user, handlers }: UserProfileViewProps) {
   );
 }
 
-// UserProfileContainer.tsx — framework boundary, wires everything
+// UserProfileContainer.tsx -framework boundary, wires everything
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
@@ -176,7 +176,7 @@ export function UserProfileContainer() {
 ### Example: Client Island for Realtime
 
 ```tsx
-// UserPresenceClient.tsx — client island for websocket subscription
+// UserPresenceClient.tsx -client island for websocket subscription
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -261,7 +261,7 @@ export const defaultProductFilters = productFiltersSchema.parse({});
 type SearchParamsLike = { get(key: string): string | null };
 
 // Parse URL search params into typed object
-// Use safeParse — URL is untrusted input; don't crash the page on ?page=lol
+// Use safeParse -URL is untrusted input; don't crash the page on ?page=lol
 export function parseProductFilters(searchParams: SearchParamsLike): ProductFilters {
   const result = productFiltersSchema.safeParse({
     search: searchParams.get('search') ?? undefined,
@@ -303,7 +303,7 @@ export function serializeProductFilters(filters: ProductFilters): URLSearchParam
   return params;
 }
 
-// The keys this module controls — used for merging
+// The keys this module controls -used for merging
 const PRODUCT_FILTER_KEYS = ['search', 'category', 'sort', 'page', 'minPrice', 'maxPrice'] as const;
 
 // Merge our params with existing URL (preserves unrelated params like feature flags)
@@ -322,7 +322,7 @@ export function mergeProductFilters(
 This merge pattern prevents "why did my query param disappear?" bugs when other widgets or feature flags use the URL.
 
 ```tsx
-// ProductListContainer.tsx — uses typed URL state
+// ProductListContainer.tsx -uses typed URL state
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   parseProductFilters,
@@ -336,7 +336,7 @@ export function ProductListContainer() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // Parse once at the boundary — everything downstream is typed
+  // Parse once at the boundary -everything downstream is typed
   const filters = parseProductFilters(searchParams);
 
   // Query key derives from parsed state (stable, typed)
@@ -379,7 +379,7 @@ export function ProductListContainer() {
 ### Example: Discriminated Union for UI States
 
 ```ts
-// ❌ BAD: Scattered booleans — allows impossible states
+// ❌ BAD: Scattered booleans -allows impossible states
 type BadFormState = {
   isSubmitting: boolean;
   isSuccess: boolean;
@@ -391,7 +391,7 @@ type BadFormState = {
 ```
 
 ```ts
-// ✅ GOOD: Discriminated union — impossible states are unrepresentable
+// ✅ GOOD: Discriminated union -impossible states are unrepresentable
 type FormState =
   | { status: 'idle' }
   | { status: 'submitting' }
@@ -519,7 +519,7 @@ React Query is required to standardize:
 ### Query Key Factories
 
 ```ts
-// queries/userKeys.ts — stable, composable key factory
+// queries/userKeys.ts -stable, composable key factory
 export const userKeys = {
   all: ['users'] as const,
   lists: () => [...userKeys.all, 'list'] as const,
@@ -661,7 +661,7 @@ export class ApiError extends Error {
   }
 }
 
-// lib/fetch-json.ts — all queries use this
+// lib/fetch-json.ts -all queries use this
 import { ApiError } from './api-error';
 
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -731,16 +731,16 @@ function createQueryClient() {
         refetchOnWindowFocus: true,
         retry: (failureCount, error) => {
           if (error instanceof ApiError) {
-            // 429 (rate limit) and 408 (timeout) are transient — retry them
+            // 429 (rate limit) and 408 (timeout) are transient -retry them
             if (error.status === 429 || error.status === 408) {
               return failureCount < 3;
             }
-            // Other 4xx are client errors — won't succeed on retry
+            // Other 4xx are client errors -won't succeed on retry
             if (error.status >= 400 && error.status < 500) {
               return false;
             }
           }
-          // 5xx, network errors, timeouts — retry up to 3 times
+          // 5xx, network errors, timeouts -retry up to 3 times
           return failureCount < 3;
         },
       },
@@ -785,11 +785,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 - If your framework supports SSR/RSC/prefetch, do it at the boundary.
 - The reusable code still uses the same React Query key conventions and hooks.
-- Hydration is wiring—not architecture.
+- Hydration is wiring -not architecture.
 
 ```tsx
-// Next.js App Router example — prefetch at the route boundary
-// app/users/[id]/page.tsx (this IS the container — lives in app/, not components/)
+// Next.js App Router example -prefetch at the route boundary
+// app/users/[id]/page.tsx (this IS the container -lives in app/, not components/)
 import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query';
 import { userKeys } from '@/queries/userKeys';
 import { fetchUser } from '@/queries/fetchUser';
@@ -862,7 +862,7 @@ function UserListContainer() {
   const { data, isLoading, isFetching, isError, refetch } = useUsersQuery();
 
   if (isLoading) {
-    // Initial load — show skeletons
+    // Initial load -show skeletons
     return (
       <div className="grid gap-4">
         {Array.from({ length: 6 }).map((_, i) => (
@@ -951,25 +951,25 @@ function Dashboard() {
 ```ts
 // Where to log errors
 const errorLogger = {
-  // Route/feature boundaries — log to Sentry/etc
+  // Route/feature boundaries -log to Sentry/etc
   boundary: (error: Error, info: React.ErrorInfo) => {
     captureException(error, { extra: { componentStack: info.componentStack } });
   },
 
-  // Query errors — log only server/unexpected errors
+  // Query errors -log only server/unexpected errors
   query: (error: Error) => {
     if (isNetworkError(error) || is5xxError(error)) {
       captureException(error);
     }
-    // Don't log 4xx — those are expected (not found, validation, etc.)
+    // Don't log 4xx -those are expected (not found, validation, etc.)
   },
 
-  // Mutation errors — show user-facing error; log unexpected errors (5xx, network)
+  // Mutation errors -show user-facing error; log unexpected errors (5xx, network)
   mutation: (error: Error, context: { action: string }) => {
     if (isNetworkError(error) || is5xxError(error)) {
       captureException(error, { extra: context });
     }
-    // Don't log 4xx — those are expected (validation, not found, etc.)
+    // Don't log 4xx -those are expected (validation, not found, etc.)
   },
 };
 ```
@@ -1021,7 +1021,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
 ```tsx
 // components/ErrorState.tsx
-// Icons from lucide-react, heroicons, or similar — swap as needed
+// Icons from lucide-react, heroicons, or similar -swap as needed
 import { AlertCircle as AlertCircleIcon } from 'lucide-react';
 
 type ErrorStateProps = {
@@ -1134,8 +1134,8 @@ function DashboardPage() {
 
 Since you're mandating both Suspense and boundaries, understand the key gotchas:
 
-1. **Suspense only handles "pending", not "error"** — You still need an ErrorBoundary around Suspense subtrees
-2. **React Query suspense mode throws during render** — Errors are caught by ErrorBoundary (good), but you need to reset queries when retrying
+1. **Suspense only handles "pending", not "error"** -You still need an ErrorBoundary around Suspense subtrees
+2. **React Query suspense mode throws during render** -Errors are caught by ErrorBoundary (good), but you need to reset queries when retrying
 
 The canonical pattern:
 
@@ -1280,7 +1280,7 @@ export function UserCard({ user, deps, handlers }: UserCardProps) {
 }
 
 // Container wires the handlers at the framework boundary
-// app/users/UserCardContainer.tsx (boundary — framework imports OK here)
+// app/users/UserCardContainer.tsx (boundary -framework imports OK here)
 'use client';
 
 import { useRouter } from 'next/navigation';
@@ -1483,9 +1483,9 @@ const AppContext = createContext<{
 
 Extract a hook when:
 
-1. **Reuse** — The same stateful logic appears in multiple components
-2. **Complexity** — A component's logic is hard to follow
-3. **Testing** — You want to test the logic separately from the UI
+1. **Reuse** -The same stateful logic appears in multiple components
+2. **Complexity** -A component's logic is hard to follow
+3. **Testing** -You want to test the logic separately from the UI
 
 Don't extract a hook just to "organize code." If it's only used once and the component is readable, leave it inline.
 
@@ -1574,10 +1574,10 @@ const isMobile = useMediaQuery('(max-width: 768px)');
 
 ### Composition Pattern
 
-Compose primitive hooks into feature-specific hooks. **Note:** Framework-aware logic (like reading URL params) should be injected as deps, not imported—this keeps hooks portable and testable:
+Compose primitive hooks into feature-specific hooks. **Note:** Framework-aware logic (like reading URL params) should be injected as deps, not imported -this keeps hooks portable and testable:
 
 ```tsx
-// hooks/useSearchFilter.ts — composes primitives, accepts deps
+// hooks/useSearchFilter.ts -composes primitives, accepts deps
 import { useState } from 'react';
 import { useDebounce } from './useDebounce';
 
@@ -1880,7 +1880,7 @@ npm install react-hook-form @hookform/resolvers zod
 ### Basic Pattern: Form + Zod Schema
 
 ```tsx
-// schemas/contact.ts — single source of truth
+// schemas/contact.ts -single source of truth
 import { z } from 'zod';
 
 export const contactFormSchema = z.object({
@@ -2019,10 +2019,10 @@ function EventForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)}>
-      {/* Regular inputs — uncontrolled via register */}
+      {/* Regular inputs -uncontrolled via register */}
       <input {...register('title')} />
 
-      {/* DatePicker needs controlled — use Controller */}
+      {/* DatePicker needs controlled -use Controller */}
       <Controller
         name="startDate"
         control={control}
@@ -2107,7 +2107,7 @@ function CreateUserContainer() {
   );
 }
 
-// Form stays pure — receives handlers via props
+// Form stays pure -receives handlers via props
 function CreateUserForm({ onSubmit, isSubmitting, serverError }: CreateUserFormProps) {
   const { register, handleSubmit, formState: { errors } } = useForm<CreateUserData>({
     resolver: zodResolver(createUserSchema),
@@ -2142,7 +2142,7 @@ function CreateUserForm({ onSubmit, isSubmitting, serverError }: CreateUserFormP
 
 ## React Server Components (RSC)
 
-> **Note:** This section applies to frameworks that support RSC (Next.js App Router, etc.). **If your framework doesn't support RSC (Vite SPA, CRA, older Next.js), skip this section**—the Container/View pattern from earlier sections is your model. RSC just moves the Container to the server.
+> **Note:** This section applies to frameworks that support RSC (Next.js App Router, etc.). **If your framework doesn't support RSC (Vite SPA, CRA, older Next.js), skip this section** -the Container/View pattern from earlier sections is your model. RSC just moves the Container to the server.
 
 ### RSC Mental Model
 
@@ -2164,7 +2164,7 @@ With RSC:
 ```
 
 ```tsx
-// app/users/[id]/page.tsx — Server Component (Container role)
+// app/users/[id]/page.tsx -Server Component (Container role)
 // Next.js App Router example: uses notFound(); other frameworks should use their equivalent 404 mechanism (throw/return boundary response).
 // This runs on the server only
 import { notFound } from 'next/navigation';
@@ -2172,7 +2172,7 @@ import { UserProfileView } from '@/components/UserProfileView';
 import { fetchUser } from '@/data/users';
 
 export default async function UserPage({ params }: { params: { id: string } }) {
-  // Direct data access — no useEffect, no loading states here
+  // Direct data access -no useEffect, no loading states here
   const user = await fetchUser(params.id);
 
   if (!user) {
@@ -2185,7 +2185,7 @@ export default async function UserPage({ params }: { params: { id: string } }) {
 ```
 
 ```tsx
-// components/UserProfileView.tsx — View (Server Component by default)
+// components/UserProfileView.tsx -View (Server Component by default)
 // No 'use client' needed if no interactivity
 type UserProfileViewProps = {
   user: User;
@@ -2196,7 +2196,7 @@ export function UserProfileView({ user }: UserProfileViewProps) {
     <div className="p-6">
       <h1 className="text-2xl font-bold">{user.name}</h1>
       <p className="text-gray-600">{user.email}</p>
-      {/* Static content — no client JS needed */}
+      {/* Static content -no client JS needed */}
     </div>
   );
 }
@@ -2212,7 +2212,7 @@ Add `'use client'` only when the component needs:
 - **Third-party client libraries** (that use hooks internally)
 
 ```tsx
-// components/UserActions.tsx — needs 'use client'
+// components/UserActions.tsx -needs 'use client'
 'use client';
 
 import { useState } from 'react';
@@ -2244,7 +2244,7 @@ export function UserActions({ userId, onDelete }: UserActionsProps) {
 Server Components can import Client Components. Client Components cannot import Server Components (but can accept them as children).
 
 ```tsx
-// app/dashboard/page.tsx — Server Component
+// app/dashboard/page.tsx -Server Component
 import { DashboardStats } from '@/components/DashboardStats';  // Server
 import { LiveNotifications } from '@/components/LiveNotifications';  // Client
 import { fetchStats } from '@/data/dashboard';
@@ -2254,10 +2254,10 @@ export default async function DashboardPage() {
 
   return (
     <div className="grid gap-4">
-      {/* Server Component — rendered on server, no client JS */}
+      {/* Server Component -rendered on server, no client JS */}
       <DashboardStats stats={stats} />
 
-      {/* Client Component — hydrated on client for interactivity */}
+      {/* Client Component -hydrated on client for interactivity */}
       <LiveNotifications userId={stats.userId} />
     </div>
   );
@@ -2276,7 +2276,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {/* Client Component wrapper, but Header stays Server Component */}
         <ThemeProvider>
-          <Header />  {/* Passed as children — stays server-rendered */}
+          <Header />  {/* Passed as children -stays server-rendered */}
           {children}
         </ThemeProvider>
       </body>
@@ -2301,7 +2301,7 @@ export default async function ProductsPage() {
 For loading states, use Suspense at the layout level:
 
 ```tsx
-// app/products/loading.tsx — automatic Suspense boundary
+// app/products/loading.tsx -automatic Suspense boundary
 export default function ProductsLoading() {
   return <ProductGridSkeleton />;
 }
@@ -2319,7 +2319,7 @@ React Query is still valuable in RSC apps for:
 - Prefetching with hydration
 
 ```tsx
-// Server Component — prefetch for hydration
+// Server Component -prefetch for hydration
 import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query';
 import { productKeys } from '@/queries/productKeys';
 
@@ -2338,7 +2338,7 @@ export default async function ProductPage({ params }: { params: { id: string } }
   );
 }
 
-// Client Component — uses prefetched data, handles mutations
+// Client Component -uses prefetched data, handles mutations
 'use client';
 
 function ProductDetailContainer({ productId }: { productId: string }) {
@@ -2435,7 +2435,7 @@ export function Button({
 ```
 
 ```tsx
-// Usage — className for one-off overrides
+// Usage -className for one-off overrides
 <Button variant="primary" size="lg">
   Submit
 </Button>
@@ -2488,7 +2488,7 @@ export const Step2_Shipping: Story = { args: { initialStep: 'shipping' } };
 export const Step3_Payment: Story = { args: { initialStep: 'payment' } };
 export const Step4_Confirmation: Story = { args: { initialStep: 'confirmation' } };
 
-// Full flow story with play function — the "storyboard"
+// Full flow story with play function -the "storyboard"
 export const FullCheckoutFlow: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -2526,12 +2526,12 @@ export const PaymentDeclined: Story = {
 
 ### Development Workflow
 
-1. **Sketch the flow** — Create empty stories for each step
-2. **Build views** — Implement `StepView` components with mock props
-3. **Add MSW handlers** — Simulate API responses
-4. **Demo to stakeholders** — Get feedback before backend is ready
-5. **Wire to real backend** — Replace MSW with real API
-6. **Keep stories** — They become regression tests
+1. **Sketch the flow** -Create empty stories for each step
+2. **Build views** -Implement `StepView` components with mock props
+3. **Add MSW handlers** -Simulate API responses
+4. **Demo to stakeholders** -Get feedback before backend is ready
+5. **Wire to real backend** -Replace MSW with real API
+6. **Keep stories** -They become regression tests
 
 This approach enables **parallel frontend/backend development** and catches UX issues before they're expensive to fix.
 
@@ -2616,7 +2616,7 @@ export const NoAvatar: Story = {
 For framework-agnostic Storybook stories, create a portable container that accepts props instead of reading from router params:
 
 ```tsx
-// UserProfileByIdContainer.tsx — portable container (no useParams)
+// UserProfileByIdContainer.tsx -portable container (no useParams)
 'use client';
 
 import { createNavigationAdapter } from '@/adapters/navigation';
@@ -2665,7 +2665,7 @@ export function UserProfileContainer() {
 ```
 
 ```tsx
-// UserProfile.stories.tsx — framework-agnostic (no router addons needed)
+// UserProfile.stories.tsx -framework-agnostic (no router addons needed)
 import React from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 import { fn } from '@storybook/test';
@@ -2961,7 +2961,7 @@ describe('MultiStepForm', () => {
 
 ### MSW: Required for Storybook and Integration Tests
 
-MSW is not optional—it's how we get deterministic stories and tests.
+MSW is not optional -it's how we get deterministic stories and tests.
 
 | Use Case | MSW Role |
 | -------- | -------- |
@@ -2978,7 +2978,7 @@ MSW is not optional—it's how we get deterministic stories and tests.
 import { http, HttpResponse, delay } from 'msw';
 import type { User, Product } from '@/types';
 
-// Mock data — use incrementing IDs for deterministic tests
+// Mock data -use incrementing IDs for deterministic tests
 let nextId = 3;
 let users: User[] = [
   { id: '1', name: 'Alice', email: 'alice@example.com' },
@@ -3009,7 +3009,7 @@ export const handlers = [
     return HttpResponse.json(user);
   }),
 
-  // Create user — deterministic ID for tests
+  // Create user -deterministic ID for tests
   http.post('/api/users', async ({ request }) => {
     const body = await request.json() as Omit<User, 'id'>;
     const newUser = { ...body, id: String(nextId++) };
@@ -3055,7 +3055,7 @@ decorators: [(Story) => { resetMockDb(); return Story(); }]
 ```
 
 ```ts
-// mocks/browser.ts — for Storybook
+// mocks/browser.ts -for Storybook
 import { setupWorker } from 'msw/browser';
 import { handlers } from './handlers';
 
@@ -3063,7 +3063,7 @@ export const worker = setupWorker(...handlers);
 ```
 
 ```ts
-// mocks/server.ts — for tests
+// mocks/server.ts -for tests
 import { setupServer } from 'msw/node';
 import { handlers } from './handlers';
 
@@ -3117,7 +3117,7 @@ Now every story automatically has MSW + deterministic mock state. Individual sto
 
 ### Vite: Recommended for Dev Tooling, Not an Architectural Dependency
 
-Use Vite for fast dev experience (Storybook builder, TanStack Start, component playgrounds). Don't architect as if Vite is always present—your code should work with any bundler.
+Use Vite for fast dev experience (Storybook builder, TanStack Start, component playgrounds). Don't architect as if Vite is always present -your code should work with any bundler.
 
 ---
 
@@ -3161,7 +3161,7 @@ export function Dialog({ isOpen, onClose, title, children }: DialogProps) {
     }
   }, [isOpen]);
 
-  // Note: No manual Escape handler needed — <dialog> handles it natively
+  // Note: No manual Escape handler needed -<dialog> handles it natively
   // and fires onClose when user presses Escape
 
   return (
@@ -3287,9 +3287,9 @@ function VirtualProductList({ products }: { products: Product[] }) {
 
 When you need to render user-provided content:
 
-1. **Prefer plain text** — render as text nodes, not HTML
-2. **Use markdown libraries** — they handle escaping
-3. **Sanitize if HTML is required** — use DOMPurify with strict allowlists
+1. **Prefer plain text** -render as text nodes, not HTML
+2. **Use markdown libraries** -they handle escaping
+3. **Sanitize if HTML is required** -use DOMPurify with strict allowlists
 
 ```tsx
 // ✅ SAFE: Render as text (default React behavior)
@@ -3554,7 +3554,7 @@ export default [
     },
   },
 
-  // Server/client separation — only apply to explicitly marked client files
+  // Server/client separation -only apply to explicitly marked client files
   // Avoid **/use*.{ts,tsx} as it matches server-safe hooks too
   {
     files: ['**/*.client.{ts,tsx}', 'src/client/**/*.{ts,tsx}'],

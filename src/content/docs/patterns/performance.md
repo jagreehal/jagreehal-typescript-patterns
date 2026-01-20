@@ -3,7 +3,7 @@ title: Performance Testing
 description: Use load tests to find bottlenecks and chaos tests to verify resilience patterns work under pressure.
 ---
 
-*Previously: [Enforcing Patterns with ESLint](/patterns/eslint). We can enforce patterns. But how do we know our code performs under load?*
+*Previously: [Enforcing Patterns with ESLint](./eslint). We can enforce patterns. But how do we know our code performs under load?*
 
 ---
 
@@ -25,7 +25,7 @@ Unit tests verify correctness. Integration tests verify the stack works together
 - What breaks first under load?
 - Where do we spend the most time when the system is stressed?
 
-Your OpenTelemetry traces from [post 5](/patterns/opentelemetry) are essential here. But traces from single requests show "happy path" performance. Under load, different problems emerge:
+Your OpenTelemetry traces from [post 5](./opentelemetry) are essential here. But traces from single requests show "happy path" performance. Under load, different problems emerge:
 
 ```mermaid
 graph TD
@@ -113,7 +113,7 @@ export default function () {
 }
 ```
 
-> **Why `sleep()`?** In k6, a Virtual User (VU) executes the script in a loop. Without `sleep`, a single VU could generate hundreds of requests per second—accidentally DDoS-ing your local machine. `sleep` simulates realistic human behavior ("think time") between actions, like a user reading a page before clicking. Without it, you're not testing "10 users"—you're testing "10 infinite loops hammering your API."
+> **Why `sleep()`?** In k6, a Virtual User (VU) executes the script in a loop. Without `sleep`, a single VU could generate hundreds of requests per second -accidentally DDoS-ing your local machine. `sleep` simulates realistic human behavior ("think time") between actions, like a user reading a page before clicking. Without it, you're not testing "10 users" -you're testing "10 infinite loops hammering your API."
 
 Run it:
 
@@ -273,7 +273,7 @@ Spike tests reveal:
 
 ## Connecting Load Tests to Traces
 
-Here's where [OpenTelemetry](/patterns/opentelemetry) becomes invaluable. Your traces show *where* time is spent under load.
+Here's where [OpenTelemetry](./opentelemetry) becomes invaluable. Your traces show *where* time is spent under load.
 
 ### Pass Trace Context from k6
 
@@ -351,7 +351,7 @@ Without load testing, you'd never see that 1,750ms connection pool wait. The tra
 
 ## Setting SLOs and Thresholds
 
-Don't just measure—set expectations. k6 thresholds fail your test if SLOs aren't met:
+Don't just measure -set expectations. k6 thresholds fail your test if SLOs aren't met:
 
 ```javascript
 export const options = {
@@ -420,7 +420,7 @@ Once you can measure performance, you can break things intentionally. This is **
 
 ### The Idea
 
-Your [resilience patterns](/patterns/resilience) (retries, timeouts, circuit breakers) are only valuable if they work. Chaos engineering proves they do.
+Your [resilience patterns](./resilience) (retries, timeouts, circuit breakers) are only valuable if they work. Chaos engineering proves they do.
 
 ```mermaid
 graph TD

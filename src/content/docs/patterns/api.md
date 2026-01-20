@@ -3,7 +3,7 @@ title: API Design Patterns
 description: Build production-ready HTTP APIs with clean handlers, proper error mapping, health checks, and operational excellence.
 ---
 
-*Previously: [Configuration at the Boundary](/patterns/configuration). We learned to validate config at startup. Now let's build APIs that use all these patterns together.*
+*Previously: [Configuration at the Boundary](./configuration). We learned to validate config at startup. Now let's build APIs that use all these patterns together.*
 
 ---
 
@@ -84,7 +84,7 @@ export const createUser = os
   });
 ```
 
-This is [Validation at the Boundary](/patterns/validation) in action. The handler never sees invalid data.
+This is [Validation at the Boundary](./validation) in action. The handler never sees invalid data.
 
 ### Sanitize After Validation
 
@@ -167,7 +167,7 @@ This works well when:
 
 ### Approach 2: Result Types (Complex APIs)
 
-For complex business logic, use [Result types](/patterns/errors) internally and map at the boundary:
+For complex business logic, use [Result types](./errors) internally and map at the boundary:
 
 ```typescript
 import { trace } from "./observability";
@@ -259,7 +259,7 @@ throw new ORPCError(result.error, {
 });
 ```
 
-> **Rule: `ORPCError(code)` must match `ErrorResponse.code`**. Using the same string for both simplifies logs, metrics, and client error handling. For example, `throw new ORPCError("NOT_FOUND", { data: createErrorResponse("NOT_FOUND", ...) })` — never mix codes like `ORPCError("BAD_REQUEST")` with `createErrorResponse("MISSING_FIELD")`.
+> **Rule: `ORPCError(code)` must match `ErrorResponse.code`**. Using the same string for both simplifies logs, metrics, and client error handling. For example, `throw new ORPCError("NOT_FOUND", { data: createErrorResponse("NOT_FOUND", ...) })` -never mix codes like `ORPCError("BAD_REQUEST")` with `createErrorResponse("MISSING_FIELD")`.
 
 **Why this matters:**
 - Clients write one error handler that works everywhere
@@ -473,8 +473,8 @@ const checkCache = trace(
 > **Why 503?** Load balancers and orchestrators check HTTP status codes, not response bodies. Returning `200` with `status: "not_ready"` will keep routing traffic to unhealthy instances.
 
 **Response contract** (for OpenAPI/client generation):
-- **200**: `ReadyResponse` — `{ status: "ready", checks }`
-- **503**: `NotReadyResponse` — `{ status: "not_ready", checks }`
+- **200**: `ReadyResponse` -`{ status: "ready", checks }`
+- **503**: `NotReadyResponse` -`{ status: "not_ready", checks }`
 
 Both responses include the same `checks` object so clients can see which dependencies failed. If your framework can't express multiple response schemas (e.g., union types in OpenAPI), document the 503 body in prose and keep the shape stable.
 
@@ -790,7 +790,7 @@ const corsConfig = {
 
 > **Critical**: Browsers reject `credentials: true` with `Access-Control-Allow-Origin: *`. Always echo the specific allowed origin and include `Vary: Origin` so caches don't mix up responses.
 
-> **Non-browser requests**: When `Origin` is absent (curl, server-to-server), CORS doesn't apply—it's a browser-only policy. You don't need to set any CORS headers for these requests; just process them normally.
+> **Non-browser requests**: When `Origin` is absent (curl, server-to-server), CORS doesn't apply -it's a browser-only policy. You don't need to set any CORS headers for these requests; just process them normally.
 
 ### Common CORS Mistakes
 
@@ -1197,7 +1197,7 @@ app.use((req, next) => {
 
 ## Route File Organization
 
-As APIs grow, file organization becomes critical. The patterns from [Functions Over Classes](/patterns/functions) apply here: "Group only when functions genuinely travel together (often at boundaries: routers)."
+As APIs grow, file organization becomes critical. The patterns from [Functions Over Classes](./functions) apply here: "Group only when functions genuinely travel together (often at boundaries: routers)."
 
 ### One File Per Route
 
@@ -1460,10 +1460,10 @@ describe("getUser", () => {
 
 **Why this works:**
 
-- No `vi.mock` path coupling — refactor freely
-- No hoisting magic — clear execution order
-- No global state — tests are isolated
-- Type-safe mocks — `mock<GetUserDeps>()` enforces the interface
+- No `vi.mock` path coupling -refactor freely
+- No hoisting magic -clear execution order
+- No global state -tests are isolated
+- Type-safe mocks -`mock<GetUserDeps>()` enforces the interface
 
 ### Integration Testing
 
@@ -1544,7 +1544,7 @@ if (
 
 ## The Complete Handler Pattern
 
-Putting it all together—every pattern in one example:
+Putting it all together -every pattern in one example:
 
 ```typescript
 import { os, ORPCError } from "@orpc/server";
@@ -1680,7 +1680,7 @@ export const createOrder = os
 
 7. **Idempotency for mutations.** Use idempotency keys for POST/PUT to prevent duplicates on retry.
 
-8. **Context flows through.** Request ID, logger, user—available everywhere.
+8. **Context flows through.** Request ID, logger, user -available everywhere.
 
 9. **Document automatically.** OpenAPI generated from code, not maintained separately.
 
@@ -1727,16 +1727,16 @@ export const createOrder = os
 
 Over these patterns, we've constructed a complete TypeScript application architecture:
 
-1. **[Testing drives design](/patterns/testing)** — Testability revealed the need for explicit deps
-2. **[Functions over classes](/patterns/functions)** — `fn(args, deps)` pattern
-3. **[Validation at the boundary](/patterns/validation)** — Zod schemas, branded types
-4. **[Typed errors](/patterns/errors)** — Result types, railway-oriented programming
-5. **[Observability](/patterns/opentelemetry)** — `trace()` wrapper, structured logging
-6. **[Resilience](/patterns/resilience)** — Retry, timeout, circuit breaker at workflow level
-7. **[Configuration](/patterns/configuration)** — Validate at startup, secrets in memory
-8. **[API design](/patterns/api)** — This pattern: handlers, health checks, security
+1. **[Testing drives design](./testing)** -Testability revealed the need for explicit deps
+2. **[Functions over classes](./functions)** -`fn(args, deps)` pattern
+3. **[Validation at the boundary](./validation)** -Zod schemas, branded types
+4. **[Typed errors](./errors)** -Result types, railway-oriented programming
+5. **[Observability](./opentelemetry)** -`trace()` wrapper, structured logging
+6. **[Resilience](./resilience)** -Retry, timeout, circuit breaker at workflow level
+7. **[Configuration](./configuration)** -Validate at startup, secrets in memory
+8. **[API design](./api)** -This pattern: handlers, health checks, security
 
-Each pattern builds on the previous. They're not independent—they're a cohesive architecture.
+Each pattern builds on the previous. They're not independent -they're a cohesive architecture.
 
 ---
 
@@ -1771,4 +1771,4 @@ We've built the complete application architecture. But patterns are only as good
 
 ---
 
-*Next: [Enforcing Patterns with TypeScript](/patterns/typescript-config). Compile-time enforcement.*
+*Next: [Enforcing Patterns with TypeScript](./typescript-config). Compile-time enforcement.*

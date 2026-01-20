@@ -3,7 +3,7 @@ title: Resilience Patterns
 description: Add retries, timeouts, and circuit breakers to handle transient failures without cluttering your business logic.
 ---
 
-*Previously: [Functions + OpenTelemetry](/patterns/opentelemetry). We made our functions observable. Now we can see what fails. But some failures are temporary.*
+*Previously: [Functions + OpenTelemetry](./opentelemetry). We made our functions observable. Now we can see what fails. But some failures are temporary.*
 
 ---
 
@@ -11,7 +11,7 @@ Your database connection drops for a second. Your HTTP client times out. An exte
 
 These failures are transient. If you wait a moment and try again, they'll probably work. But right now, your functions fail on the first error. The user sees an error page. The operation fails. Everyone's unhappy.
 
-It's 3pm on Tuesday. Your payment provider has a 2-second outage—happens once a month, lasts seconds. Every checkout in that window fails. Users see "Payment failed." Your support queue fills up. Your Slack channel lights up. By the time you check, the provider is already back. The incident lasted 2 seconds but generated 50 support tickets.
+It's 3pm on Tuesday. Your payment provider has a 2-second outage -happens once a month, lasts seconds. Every checkout in that window fails. Users see "Payment failed." Your support queue fills up. Your Slack channel lights up. By the time you check, the provider is already back. The incident lasted 2 seconds but generated 50 support tickets.
 
 Should you add retry logic?
 
@@ -143,7 +143,7 @@ By keeping retry at the workflow level, you avoid this explosion.
 
 **The Blast Radius Problem:** Without centralized retry policy, a minor blip in a downstream service can become a self-inflicted DDoS. If every layer retries 3×, and you have 3 layers, a single failure becomes 27 requests. Multiply by 100 concurrent users and you've created a retry storm that prevents the failing service from recovering.
 
-You add retries to make things more reliable. The database has a brief hiccup. Your retries kick in—all of them, at every layer, for every user. The database, already struggling, now receives 27× the normal load. It doesn't recover. It crashes harder. Your retries made the outage worse.
+You add retries to make things more reliable. The database has a brief hiccup. Your retries kick in -all of them, at every layer, for every user. The database, already struggling, now receives 27× the normal load. It doesn't recover. It crashes harder. Your retries made the outage worse.
 
 ```mermaid
 graph TD
@@ -167,7 +167,7 @@ graph TD
     linkStyle 4 stroke:#0f172a,stroke-width:3px
 ```
 
-**Solution:** Retry at ONE level only—the workflow level. Business functions and infrastructure clients should not retry internally.
+**Solution:** Retry at ONE level only -the workflow level. Business functions and infrastructure clients should not retry internally.
 
 ---
 
@@ -196,7 +196,7 @@ For writes, either:
 
 ## Which Errors Should You Retry?
 
-Not all errors are retryable. Some are permanent failures—retrying won't help.
+Not all errors are retryable. Some are permanent failures -retrying won't help.
 
 | Error Type | Retry? | Why |
 | ---------- | ------ | --- |
@@ -316,7 +316,7 @@ Use these as starting points and tune based on your SLOs:
 | Operation Type | Attempts | Backoff | Initial Delay | Timeout |
 | -------------- | -------- | ------- | ------------- | ------- |
 | Database read | 3 | exponential | 50ms | 5s |
-| Database write | 1 | — | — | 10s |
+| Database write | 1 | -| -| 10s |
 | HTTP API call | 3 | exponential | 100ms | 30s |
 | Cache lookup | 2 | fixed | 10ms | 500ms |
 | File I/O | 2 | linear | 100ms | 5s |
@@ -324,12 +324,12 @@ Use these as starting points and tune based on your SLOs:
 **Notes:**
 
 - Writes default to 1 attempt (no retry) unless you have idempotency keys
-- Always set timeouts—never let operations hang indefinitely
+- Always set timeouts -never let operations hang indefinitely
 - Always use jitter for distributed systems (see below)
 
 ### Why Jitter Matters
 
-Without jitter, all your service instances retry at the exact same moment—a **thundering herd** that can overwhelm a recovering system:
+Without jitter, all your service instances retry at the exact same moment -a **thundering herd** that can overwhelm a recovering system:
 
 ```text
 Without jitter:
@@ -531,5 +531,5 @@ Environment variables are strings. They might be missing. They might be invalid.
 
 ---
 
-*Next: [Configuration at the Boundary](/patterns/configuration). Validate environment variables at startup.*
+*Next: [Configuration at the Boundary](./configuration). Validate environment variables at startup.*
 

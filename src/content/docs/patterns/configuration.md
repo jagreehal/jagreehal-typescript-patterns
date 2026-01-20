@@ -3,7 +3,7 @@ title: Configuration at the Boundary
 description: Validate and type configuration at startup. Handle secrets securely with secret managers.
 ---
 
-*Previously: [Resilience Patterns](/patterns/resilience). We've built a complete architecture. But there's one more boundary to handle: how your application starts.*
+*Previously: [Resilience Patterns](./resilience). We've built a complete architecture. But there's one more boundary to handle: how your application starts.*
 
 ---
 
@@ -27,7 +27,7 @@ app.listen(Number(port));  // Might be NaN
 const apiKey = process.env.API_KEY;  // ⚠️ Accessible to child processes, logs, /proc/self/environ
 ```
 
-It's Monday morning. Your weekend deploy is failing. The error: `Cannot read property 'findUser' of undefined`. You check the database—it's running. You check the connection code—it's fine. Two hours later, you find it: someone added `DB_URL` to the new deployment config instead of `DATABASE_URL`. TypeScript didn't complain. The app started. It crashed on the first database call.
+It's Monday morning. Your weekend deploy is failing. The error: `Cannot read property 'findUser' of undefined`. You check the database -it's running. You check the connection code -it's fine. Two hours later, you find it: someone added `DB_URL` to the new deployment config instead of `DATABASE_URL`. TypeScript didn't complain. The app started. It crashed on the first database call.
 
 You're trusting that `process.env` has the right values. But in production, a missing or invalid environment variable means your app crashes on startup. Or worse, secrets in `process.env` can be exposed, leading to security breaches.
 
@@ -49,14 +49,14 @@ However, the original 12-factor guidance predates modern security practices. Tod
 **Why secrets shouldn't be in `process.env`:**
 
 - Child processes inherit all environment variables
-- On Linux, `/proc/self/environ` exposes the entire environment to any process with read access—a common vector for secret exfiltration if an attacker gains even limited local access
+- On Linux, `/proc/self/environ` exposes the entire environment to any process with read access -a common vector for secret exfiltration if an attacker gains even limited local access
 - Error messages and stack traces may accidentally log environment variables
 - Debugging tools and process monitors can read environment variables
 - Container orchestration tools often expose environment variables in logs or dashboards
 
 Your app has a bug that logs `process.env` during crashes for debugging. It goes to production. A user triggers the bug. Your logs now contain `DATABASE_PASSWORD=super-secret-123`, `STRIPE_API_KEY=sk_live_...`, visible to anyone with log access. The security team calls. It's going to be a long day.
 
-**Why memory is safer:** Secrets loaded directly into your Node.js process's heap memory are isolated to that specific process's address space. They're invisible to standard environment scraping tools, child processes, and `/proc` inspection. The kernel enforces this isolation—it's not just hiding secrets, it's leveraging OS-level security boundaries.
+**Why memory is safer:** Secrets loaded directly into your Node.js process's heap memory are isolated to that specific process's address space. They're invisible to standard environment scraping tools, child processes, and `/proc` inspection. The kernel enforces this isolation -it's not just hiding secrets, it's leveraging OS-level security boundaries.
 
 **Best practice:** Load secrets from secret managers (AWS Secrets Manager, Vault, etc.) directly into your config object in memory. They never touch `process.env`.
 
@@ -82,7 +82,7 @@ async function getUser(args: { userId: string }, deps: GetUserDeps) {
 
 Now every function that needs configuration has to validate it. You're checking the same environment variables in multiple places. And if validation fails, it fails at runtime, deep in your call stack.
 
-Configuration validation belongs at the **boundary**—when your application starts, before any business logic runs.
+Configuration validation belongs at the **boundary** -when your application starts, before any business logic runs.
 
 ---
 
@@ -169,7 +169,7 @@ const config = await resolveAsync({
 
 **Important:** The `awsSecrets` resolver loads secrets directly into the config object in memory. They never enter `process.env`, protecting them from leaks.
 
-**Ephemeral Credentials:** Modern secret managers can generate time-limited, dynamic credentials instead of static secrets. For example, AWS Secrets Manager can provide short-lived database credentials that your app refreshes at the boundary. If a credential leaks, it expires automatically—significantly reducing blast radius compared to long-lived secrets.
+**Ephemeral Credentials:** Modern secret managers can generate time-limited, dynamic credentials instead of static secrets. For example, AWS Secrets Manager can provide short-lived database credentials that your app refreshes at the boundary. If a credential leaks, it expires automatically -significantly reducing blast radius compared to long-lived secrets.
 
 ```typescript
 // Ephemeral credentials pattern
@@ -348,7 +348,7 @@ If someone accidentally tries to load secrets from `.env` or `process.env` in pr
 
 ## Secret Scanning in CI
 
-Runtime policies protect production, but what about the `.env` file that should never exist? Secret leakage—accidentally committing credentials—is classified as a "Severe" technical impact in modern security standards.
+Runtime policies protect production, but what about the `.env` file that should never exist? Secret leakage -accidentally committing credentials -is classified as a "Severe" technical impact in modern security standards.
 
 **Pre-check rule:** Run secret scanning in CI to catch leaked credentials before they reach production:
 
@@ -503,9 +503,9 @@ Run TruffleHog or Gitleaks to catch accidentally committed secrets before they r
 
 We've established patterns. Functions take object parameters. Dependencies are injected. Infrastructure stays separate. Configuration is validated at startup.
 
-Now let's see how everything comes together at the HTTP boundary—where your validated, typed, resilient code meets the outside world.
+Now let's see how everything comes together at the HTTP boundary -where your validated, typed, resilient code meets the outside world.
 
 ---
 
-*Next: [API Design Patterns](/patterns/api). Building production-ready HTTP APIs.*
+*Next: [API Design Patterns](./api). Building production-ready HTTP APIs.*
 

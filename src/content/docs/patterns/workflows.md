@@ -3,7 +3,7 @@ title: Composing Workflows
 description: Orchestrate multi-step operations with sagas, parallel execution, batch processing, and human-in-the-loop patterns using awaitly.
 ---
 
-*Previously: [Typed Errors](/patterns/errors). We learned to make failure explicit. But what happens when a multi-step operation fails halfway through?*
+*Previously: [Typed Errors](./errors). We learned to make failure explicit. But what happens when a multi-step operation fails halfway through?*
 
 ---
 
@@ -46,7 +46,7 @@ async function checkout(
 
 What happens when step 2 fails after step 1 succeeds?
 
-The customer is charged, but there's no order. The inventory was never reserved. You have money and no record of what it's for. The `catch` block doesn't help—it doesn't know which step succeeded before the failure.
+The customer is charged, but there's no order. The inventory was never reserved. You have money and no record of what it's for. The `catch` block doesn't help -it doesn't know which step succeeded before the failure.
 
 ```mermaid
 graph LR
@@ -60,7 +60,7 @@ graph LR
 
 This code is honest about *individual* failures but silent about *partial* failures. What do you do when step 2 of 5 fails?
 
-The problem isn't exceptions—it's that the code doesn't record which side effects already happened. Without that, you can't reliably compensate, retry safely, or resume from a checkpoint.
+The problem isn't exceptions -it's that the code doesn't record which side effects already happened. Without that, you can't reliably compensate, retry safely, or resume from a checkpoint.
 
 ---
 
@@ -275,7 +275,7 @@ Compensations are **best-effort, not transactional**. Some actions cannot be und
 | **Safe** | Compensation must not cause additional harm (e.g., double-refunding) |
 | **Idempotent** | Running twice produces the same result (compensation itself may fail and retry) |
 | **Observable** | Log and emit metrics so you know when compensations run and whether they succeed |
-| **Alerting** | Failed compensations need human attention—don't silently swallow errors |
+| **Alerting** | Failed compensations need human attention -don't silently swallow errors |
 | **Bounded** | Consider timeouts; a hanging compensation blocks the saga's error path |
 | **Eventual** | Compensation success ≠ immediate effect (refunds may be "pending" for days) |
 
@@ -303,7 +303,7 @@ When compensation is impossible, document what *can* be done (e.g., "queue for m
 
 ### Idempotency and Retries
 
-When combining sagas with retries (via `step.retry()` from [Resilience Patterns](/patterns/resilience)), ensure side-effecting steps are idempotent. Use idempotency keys so a retry can't double-apply:
+When combining sagas with retries (via `step.retry()` from [Resilience Patterns](./resilience)), ensure side-effecting steps are idempotent. Use idempotency keys so a retry can't double-apply:
 
 ```typescript
 const payment = await saga.step(
@@ -441,7 +441,7 @@ Saga A: reserve(item) → success (1 left → 0 left)
 Saga B: reserve(item) → success (0 left → -1 left) ← oversold!
 ```
 
-**Or worse—the compensation race:**
+**Or worse -the compensation race:**
 
 ```
 Saga A: reserve → charge → [charge fails] → release
@@ -833,7 +833,7 @@ const result = await workflow(async (step, deps) => {
 // Workflow continues from the approval step
 ```
 
-**Security considerations:** `injectApproval` is powerful—it lets code bypass the normal approval check. In production:
+**Security considerations:** `injectApproval` is powerful -it lets code bypass the normal approval check. In production:
 
 1. **Verify approver identity** – Ensure the approver is authorized for this approval type
 2. **Audit log all approvals** – Record who approved, when, and what workflow it affected
@@ -857,11 +857,11 @@ await auditLog.record({
 const updatedState = injectApproval(state, { /* ... */ });
 ```
 
-**Source of truth:** Treat your approvals table as the system of record—`injectApproval` only mutates workflow state for resumption. When an approver acts: write the decision to your database first, then inject and resume using that recorded decision. If your system crashes between inject and resume, the DB record lets you retry safely.
+**Source of truth:** Treat your approvals table as the system of record -`injectApproval` only mutates workflow state for resumption. When an approver acts: write the decision to your database first, then inject and resume using that recorded decision. If your system crashes between inject and resume, the DB record lets you retry safely.
 
 ### Testing Approval Workflows
 
-Don't wait for humans in tests—inject approvals using `injectApproval()` with `resumeState`:
+Don't wait for humans in tests -inject approvals using `injectApproval()` with `resumeState`:
 
 ```typescript
 import { injectApproval } from 'awaitly/hitl';
@@ -1055,9 +1055,9 @@ const result = await orderFulfillment(async (saga, deps) => {
 
 4. **Persist state after each step for critical workflows.** Without checkpoints, a crash loses progress and may cause duplicate side effects on restart. For financial or long-running workflows, save `collector.getResumeState()` after every step completion.
 
-5. **Return minimal, stable values from steps.** Step return values are serialized into workflow state. Return IDs and small immutable data—not full objects, secrets, or PII.
+5. **Return minimal, stable values from steps.** Step return values are serialized into workflow state. Return IDs and small immutable data -not full objects, secrets, or PII.
 
-6. **Use parallel operations for independent calls.** `allAsync` for mandatory data; `allSettledAsync` when you need all errors reported. Add `step.retry()` and `step.withTimeout()` from [Resilience Patterns](/patterns/resilience) when needed.
+6. **Use parallel operations for independent calls.** `allAsync` for mandatory data; `allSettledAsync` when you need all errors reported. Add `step.retry()` and `step.withTimeout()` from [Resilience Patterns](./resilience) when needed.
 
 7. **Respect rate limits with `processInBatches`.** Never overwhelm downstream systems. Use cursor-based checkpoints for resume capability.
 
@@ -1090,4 +1090,4 @@ How do we connect these events to our observability stack?
 
 ---
 
-*Next: [Functions + OpenTelemetry](/patterns/opentelemetry). Making our workflows observable.*
+*Next: [Functions + OpenTelemetry](./opentelemetry). Making our workflows observable.*

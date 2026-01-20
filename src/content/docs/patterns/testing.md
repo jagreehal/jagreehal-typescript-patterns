@@ -291,7 +291,7 @@ This isn't "classes bad, functions good." Classes can still work if they're:
 - **IO-free.** They don't reach out to databases or APIs directly.
 - **Delegating.** They call pure functions that do the real work.
 
-The problem isn't the `class` keyword. It's when classes accumulate hidden state, implicit dependencies, and methods that secretly share everything through `this`. The `fn(args, deps)` pattern makes it *harder* to do that by accident. More on this in [Functions Over Classes](/patterns/functions).
+The problem isn't the `class` keyword. It's when classes accumulate hidden state, implicit dependencies, and methods that secretly share everything through `this`. The `fn(args, deps)` pattern makes it *harder* to do that by accident. More on this in [Functions Over Classes](./functions).
 
 ---
 
@@ -401,7 +401,7 @@ Now if someone accidentally runs tests with production credentials, they get:
 Error: Tests must use localhost database. Got: postgresql://prod-user:***@rds.amazonaws.com/orders
 ```
 
-The setup file catches it before any test runs—even tests that don't import the database directly. Crisis averted.
+The setup file catches it before any test runs -even tests that don't import the database directly. Crisis averted.
 
 ### Mocking Prisma for Unit Tests
 
@@ -478,7 +478,7 @@ No database connection. Tests run in milliseconds. And TypeScript ensures you're
 
 ### Test Stubs with Faker
 
-Integration tests need realistic data. Don't hand-craft UUIDs and names—use [Faker](https://fakerjs.dev/) to generate them:
+Integration tests need realistic data. Don't hand-craft UUIDs and names -use [Faker](https://fakerjs.dev/) to generate them:
 
 ```typescript
 // src/test-utils/stubs.ts
@@ -681,39 +681,9 @@ A healthy test suite has many fast unit tests and fewer slower integration tests
 
 ---
 
-## The Series at a Glance
-
-| Pattern | Problem It Solves | Enforced By |
-| ------- | ----------------- | ----------- |
-| [Functions Over Classes](/patterns/functions) | Hidden dependencies | `fn(args, deps)` signature |
-| [Validation](/patterns/validation) | Lying type signatures | Zod at the boundary |
-| [Never Throw](/patterns/errors) | Invisible failures | `Result<T, E>` types |
-| [Observability](/patterns/opentelemetry) | Opaque execution | `trace()` wrapper |
-| [Resilience](/patterns/resilience) | Transient failures | `step.retry()` in workflows |
-| [Configuration](/patterns/configuration) | Bad startup state | Env schemas, fail fast |
-| [TypeScript](/patterns/typescript-config) | Type leaks | Strict compiler flags |
-| [ESLint](/patterns/eslint) | Pattern drift | Lint rules that fail builds |
-| [Performance](/patterns/performance) | Unknown bottlenecks | Load tests + chaos tests |
-
-Each post solves one problem. Together, they form an architecture where code is explicit, testable, and enforced. Start with testing, then move down this list to layer on guarantees.
-
-### How to Navigate the Series
-
-1. **Functions Over Classes.** Learn the full `fn(args, deps)` pattern so every dependency is visible and mockable.
-2. **Validation at the Boundary.** Clamp inputs with Zod so your domain never trusts the outside world blindly.
-3. **Never Throw.** Replace `throw` with `Result<T, E>` and make failures part of your contracts.
-4. **Observable Functions.** Wrap work in `trace()` so you can see every call in production without sprinkling logs manually.
-5. **Resilience Patterns.** Add retries, timeouts, and circuit breakers so transient failures don't take you down.
-6. **Configuration at the Boundary.** Validate environment variables up front to catch bad deployments before any request runs.
-7. **Enforcing Patterns with TypeScript.** Use strict compiler flags so the type system stops leaky abstractions.
-8. **Enforcing Patterns with ESLint.** Bake these rules into lint so regressions fail CI before they reach users.
-9. **Performance Testing.** Load tests reveal bottlenecks; chaos tests prove resilience works under fire.
-
----
-
 ## What's Next
 
 It all starts with testing. If your code is hard to test, something's wrong with the structure. Testability isn't a nice-to-have. It's a design signal.
 
-Let's begin: [Functions Over Classes](/patterns/functions)
+Let's begin: [Functions Over Classes](./functions)
 

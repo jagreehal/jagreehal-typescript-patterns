@@ -3,7 +3,7 @@ title: Enforcing Patterns with TypeScript
 description: Use strict TypeScript compiler flags to enforce patterns at compile time. Beyond strict mode with noUncheckedIndexedAccess.
 ---
 
-*Previously: [API Design Patterns](/patterns/api). We've built the complete application architecture. Now let's enforce it.*
+*Previously: [API Design Patterns](./api). We've built the complete application architecture. Now let's enforce it.*
 
 ---
 
@@ -21,7 +21,7 @@ TypeScript can enforce patterns at compile time. Not suggestions. Not hopes. **E
 
 Many developers believe `strict: true` is the final boss of safety. It isn't.
 
-In 2025, the standard for "strict" has shifted toward **total type safety**—where even the built-in library's defaults are questioned. To enforce the "Never Throw" and "Validation at the Boundary" patterns, you need these additional flags.
+In 2025, the standard for "strict" has shifted toward **total type safety** -where even the built-in library's defaults are questioned. To enforce the "Never Throw" and "Validation at the Boundary" patterns, you need these additional flags.
 
 ### Array & Object Safety
 
@@ -63,9 +63,9 @@ This prevents subtle bugs with database serialization and object iteration.
 
 ### Native Compatibility (TS 5.8+)
 
-In 2025, the TypeScript ecosystem is shifting toward a **"type-annotations only"** approach. Node.js 22+, Bun, and Deno can now run TypeScript files directly by simply stripping types—no heavy build step required. This changes what "valid TypeScript" means.
+In 2025, the TypeScript ecosystem is shifting toward a **"type-annotations only"** approach. Node.js 22+, Bun, and Deno can now run TypeScript files directly by simply stripping types -no heavy build step required. This changes what "valid TypeScript" means.
 
-**`erasableSyntaxOnly`**: This flag is now mandatory for modern backends. It ensures your code is strictly "erasable"—compatible with native runtimes that strip types without transpilation.
+**`erasableSyntaxOnly`**: This flag is now mandatory for modern backends. It ensures your code is strictly "erasable" -compatible with native runtimes that strip types without transpilation.
 
 ```typescript
 // ❌ With erasableSyntaxOnly, these fail:
@@ -90,7 +90,7 @@ class User {
 
 ### Guarding Against Ghost Imports
 
-**`noUncheckedSideEffectImports`**: A critical safety flag that catches "ghost imports"—side-effect imports that reference files that no longer exist.
+**`noUncheckedSideEffectImports`**: A critical safety flag that catches "ghost imports" -side-effect imports that reference files that no longer exist.
 
 ```typescript
 // Side-effect imports don't bind any values:
@@ -100,7 +100,7 @@ import "./polyfills";
 
 // The problem: If you move or delete polyfills.ts...
 // TypeScript historically did NOT error. Your build passes locally,
-// then fails in CI, or worse—fails silently in production.
+// then fails in CI, or worse -fails silently in production.
 ```
 
 With `noUncheckedSideEffectImports` enabled, every side-effect import is verified against an actual file on disk:
@@ -109,13 +109,13 @@ With `noUncheckedSideEffectImports` enabled, every side-effect import is verifie
 import "./polyfills";  // ❌ Error: Cannot find module './polyfills'
 ```
 
-This is especially important in large codebases where files get reorganized, or when using bundler plugins that handle CSS/asset imports—you'll know immediately if those files are missing.
+This is especially important in large codebases where files get reorganized, or when using bundler plugins that handle CSS/asset imports -you'll know immediately if those files are missing.
 
 ---
 
 ## Fixing Standard Library Leaks
 
-Here's a harsh truth: `strict: true` is insufficient. TypeScript's standard library still leaks `any` through `JSON.parse`, `fetch`, and other I/O functions. This silently bypasses your [Validation at the Boundary](/patterns/validation) pattern.
+Here's a harsh truth: `strict: true` is insufficient. TypeScript's standard library still leaks `any` through `JSON.parse`, `fetch`, and other I/O functions. This silently bypasses your [Validation at the Boundary](./validation) pattern.
 
 ```typescript
 // The problem: JSON.parse returns any
@@ -127,7 +127,7 @@ const response = await fetch('/api/user');
 const user = await response.json();  // any ← All your careful types, gone.
 ```
 
-You spent a week building a type-safe API client. Every endpoint has perfect types. You ship it. Production crashes: `Cannot read property 'id' of undefined`. You trace it to a `fetch` call. The API returned `{ data: { user: null } }` but your code expected `{ user: { id: ... } }`. TypeScript didn't warn you. The response was `any`—you could access any property, and TypeScript believed you.
+You spent a week building a type-safe API client. Every endpoint has perfect types. You ship it. Production crashes: `Cannot read property 'id' of undefined`. You trace it to a `fetch` call. The API returned `{ data: { user: null } }` but your code expected `{ user: { id: ... } }`. TypeScript didn't warn you. The response was `any` -you could access any property, and TypeScript believed you.
 
 ### The Solution: `ts-reset`
 
@@ -154,7 +154,7 @@ const data = JSON.parse(input);
 const user = UserSchema.parse(data);  // Now it's typed
 ```
 
-**This is the key insight:** By forcing `JSON.parse` to return `unknown`, `ts-reset` makes your [Validation at the Boundary](/patterns/validation) pattern not just a best practice, but a **compiler requirement**. You literally cannot use parsed data without validating it first. The Zod boundary becomes inescapable.
+**This is the key insight:** By forcing `JSON.parse` to return `unknown`, `ts-reset` makes your [Validation at the Boundary](./validation) pattern not just a best practice, but a **compiler requirement**. You literally cannot use parsed data without validating it first. The Zod boundary becomes inescapable.
 
 It also fixes other annoyances:
 
@@ -219,7 +219,7 @@ function isRole(value: string): value is Role {
 
 ## Enforcing Type-Only Imports
 
-This is the compiler flag that enforces the `fn(args, deps)` pattern from [Functions Over Classes](/patterns/functions).
+This is the compiler flag that enforces the `fn(args, deps)` pattern from [Functions Over Classes](./functions).
 
 The pattern says: infrastructure should only be imported as *types*, never at runtime. Your functions receive infrastructure through `deps`, not through imports.
 
@@ -366,7 +366,7 @@ import { db } from './database';       // Runtime, keep as-is
 // to determine if an import is actually used at runtime
 ```
 
-The flags we recommend aren't just about safety—they're also about performance. Stricter code is faster to compile because it's more explicit about intent.
+The flags we recommend aren't just about safety -they're also about performance. Stricter code is faster to compile because it's more explicit about intent.
 
 ---
 
@@ -402,5 +402,5 @@ That's where ESLint comes in.
 
 ---
 
-*Next: [Enforcing Patterns with ESLint](/patterns/eslint). Rules that catch violations TypeScript can't.*
+*Next: [Enforcing Patterns with ESLint](./eslint). Rules that catch violations TypeScript can't.*
 
