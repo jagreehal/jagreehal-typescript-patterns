@@ -49,6 +49,13 @@ export default defineConfig({
             { label: 'Conclusion', slug: 'patterns/conclusion' },
           ],
         },
+        {
+          label: 'Bonus',
+          items: [
+            { label: 'AI Coding Agents', slug: 'patterns/ai-agents' },
+            { label: 'React Architecture', slug: 'patterns/react' },
+          ],
+        },
       ],
     }),
   ],

@@ -1,6 +1,6 @@
 ---
 title: Validation at the Boundary
-description: A pragmatic three-layer approach - boundary parsing, invariant construction, and domain rules - balancing correctness with maintainability.
+description: A pragmatic three-layer approach to validation, balancing correctness with maintainability through boundary parsing, invariant construction, and domain rules.
 ---
 
 *Previously: [Functions Over Classes](./functions). We established `fn(args, deps)` as our core pattern.*
