@@ -230,6 +230,40 @@ The mock is just an object you pass in. If the function needs different deps, yo
 
 ---
 
+## Structure Tests with Arrange-Act-Assert
+
+Every test follows three phases:
+
+1. **Arrange** – Set up test data and dependencies
+2. **Act** – Execute the function under test
+3. **Assert** – Verify the outcome
+
+Adding explicit comments makes this structure visible:
+
+```typescript
+it('creates a user and sends welcome email', async () => {
+  // Arrange
+  const mockUser = { id: '1', name: 'Alice', email: 'alice@test.com' };
+  const deps = {
+    db: { save: vi.fn().mockResolvedValue(mockUser) },
+    mailer: { sendWelcome: vi.fn().mockResolvedValue(undefined) },
+  };
+
+  // Act
+  const result = await createUser({ name: 'Alice', email: 'alice@test.com' }, deps);
+
+  // Assert
+  expect(result).toEqual(mockUser);
+  expect(deps.mailer.sendWelcome).toHaveBeenCalledWith(mockUser);
+});
+```
+
+**Why this matters:** If any section grows too large, it signals a problem. A bloated Arrange section suggests the test is too complex or testing too many things. Multiple unrelated assertions indicate you're verifying more than one behavior.
+
+The `fn(args, deps)` pattern naturally keeps Arrange simple—you're just creating an object with mock functions, not orchestrating module mocking magic.
+
+---
+
 ## Even Better: vitest-mock-extended
 
 Manually creating mock objects works, but you lose type safety. What if you forget a method? What if the interface changes?
