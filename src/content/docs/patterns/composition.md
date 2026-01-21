@@ -68,12 +68,13 @@ Every new requirement adds another conditional. The function grows unbounded.
 **The composable approach builds independent pieces that share a uniform interface:**
 
 ```typescript
-type Notification = unknown; // defined later
+type Notification = unknown; // intentionally opaque here; defined at the boundary
 
 // Each channel is a function with the same signature
 type SendChannel = (args: { notification: Notification }) => Promise<void>;
 
 // Each channel is independent and focused
+// (In real code, factories bind deps. We'll see that shortly.)
 const sendEmail: SendChannel = async (args) => { /* just email */ };
 const sendSms: SendChannel = async (args) => { /* just SMS */ };
 const sendAudit: SendChannel = async (args) => { /* just audit log */ };
@@ -123,9 +124,44 @@ graph TD
 
 ---
 
+## Composition Is SRP Made Practical
+
+The Single Responsibility Principle is easy to agree with and hard to apply.
+
+"Each unit should have one reason to change" sounds nice until requirements arrive. Then we add flags, options, conditionals, and configuration objects.
+
+That's not accidental.
+
+**SRP violations show up as configuration.**
+
+- `sendNotification(type, options)`
+- `if (audit) …`
+- `if (checkFraud) …`
+- `if (channel === 'sms') …`
+
+Every new requirement adds a new branch. The function accumulates reasons to change.
+
+Composition is how you *resolve* SRP pressure. It's how you defer decisions until you actually have information.
+
+Instead of teaching one unit about more cases, you:
+
+- Split behavior into focused units
+- Give them a uniform interface
+- Combine them at the boundary
+
+This is the same refactoring many of us learned years ago in MVVM: move business logic out of ViewModels into small testable units, then compose them instead of growing the ViewModel.
+
+Different era, same lesson.
+
+**SRP isn't about smaller files. It's about making change happen by addition, not by rewriting existing code.**
+
+---
+
 ## Fan-Out: Many Destinations, One Call
 
 Here's a common problem: you need to send the same notification to multiple destinations. Email, SMS, audit log all at once.
+
+Failure semantics (all-or-nothing vs best-effort) are a composition concern, not a channel concern.
 
 The configuration approach makes the sender know about every destination:
 
@@ -209,7 +245,7 @@ export function createSendAudit(deps: SendAuditDeps): SendChannel {
 }
 ```
 
-Now compose them in one place your [composition root](./functions#where-does-this-live):
+Now compose them in one place, your [composition root](./functions#where-does-this-live) (the single location where your app is wired together at startup):
 
 ```typescript
 // notification-service.ts (composition root)
@@ -262,10 +298,10 @@ if (deps.slackClient) {
 
 The `notify` function never changes. It doesn't know about Slack, email, or SMS. It just calls each channel.
 
-| Approach | Adding New Destination |
-|----------|------------------------|
-| Configuration object | Modify sender, add option, add conditional |
-| Fan-out with interface | Write channel factory, add to array |
+| Approach             | Adding New Destination                      |
+|----------------------|---------------------------------------------|
+| Configuration object | Modify sender, add option, add conditional  |
+| Fan-out with interface | Write channel factory, add to array       |
 
 ---
 
@@ -294,7 +330,9 @@ export function createSendEmailWithRetry(deps: SendEmailDeps): SendChannel {
 
 Now the email logic is mixed with retry logic. What if SMS needs different retry behavior? Copy-paste. What if you want retry + logging? The function explodes.
 
-**The wrapping pattern keeps them separate.** A wrapper takes a channel and returns a new channel with the same interface. Because the interface is preserved, wrappers stack:
+**The wrapping pattern keeps them separate.** A wrapper takes a channel and returns a new channel with the same interface. Because the interface is preserved, wrappers stack.
+
+Wrappers are SRP for cross-cutting concerns: retry, logging, and metrics stay out of the channel.
 
 ```typescript
 // wrappers/retry.ts
@@ -316,7 +354,7 @@ export function withRetry(channel: SendChannel, attempts = 3): SendChannel {
 The original channel stays clean. Retry is a wrapper:
 
 ```typescript
-// Original channel—just sends email
+// Original channel - just sends email
 const sendEmail = createSendEmail({ emailClient });
 
 // Wrap with retry
@@ -434,27 +472,27 @@ No existing code changed. The notification service doesn't know push exists. It 
 
 1. **Build small, focused pieces.** Each function does one thing. `createSendEmail` creates an email sender. `withRetry` adds retry. Don't combine them.
 
-2. **Use uniform interfaces.** When everything implements the same interface (`SendChannel`), you can compose them freely. Arrays, wrappers, conditionals—all work.
+2. **Use uniform interfaces.** When everything implements the same interface (`SendChannel`), you can compose them freely. Arrays, wrappers, conditionals all work.
 
 3. **Wrap, don't embed.** Need retry? Wrap it. Need logging? Wrap it. The original function stays clean.
 
 4. **Compose at startup.** Wire pieces together in your composition root. Business logic doesn't know how pieces are composed.
 
-Failure semantics (retries, escalation, partial failure) are layered on top—see [Resilience Patterns](./resilience).
+Failure semantics (retries, escalation, partial failure) are layered on top. See [Resilience Patterns](./resilience).
 
 ---
 
 ## Why This Works (SOLID in Practice)
 
-These patterns aren't arbitrary—they embody principles that make code maintainable:
+These patterns aren't arbitrary. They embody principles that make code maintainable:
 
 **Open/Closed Principle.** Adding push notifications? Write `createSendPush`, add it to the array. The `notify` function never changes. Systems are *open* for extension (new channels) but *closed* for modification (existing code untouched).
 
-**Single Responsibility.** Each piece does one thing. `createSendEmail` sends email. `withRetry` adds retry. `withLogging` adds logging. When retry logic needs to change, you change one function—not every channel.
+**Single Responsibility.** Each piece does one thing. `createSendEmail` sends email. `withRetry` adds retry. `withLogging` adds logging. When retry logic needs to change, you change one function, not every channel.
 
 **Dependency Inversion.** The composition root depends on `SendChannel`, not on `EmailClient` or `SmsClient` directly. High-level policy (fan-out to all channels) doesn't depend on low-level details (how email is sent). Both depend on the abstraction.
 
-**Liskov Substitution.** Any `SendChannel` can replace another. Wrappers return `SendChannel`, so `withRetry(sendEmail)` is substitutable wherever `sendEmail` was used. This is why wrappers stack—each layer preserves the contract.
+**Liskov Substitution.** Any `SendChannel` can replace another. Wrappers return `SendChannel`, so `withRetry(sendEmail)` is substitutable wherever `sendEmail` was used. This is why wrappers stack. Each layer preserves the contract.
 
 The patterns come first. The principles explain *why* they work.
 
@@ -462,8 +500,8 @@ The patterns come first. The principles explain *why* they work.
 
 This chapter is part of a consistent architecture:
 
-- **[Validation](./validation)** guards the boundary—inputs are parsed before they reach functions
-- **[Typed Errors](./errors)** make failure explicit—Results instead of exceptions
+- **[Validation](./validation)** guards the boundary. Inputs are parsed before they reach functions
+- **[Typed Errors](./errors)** make failure explicit. Results instead of exceptions
 - **[Workflows](./workflows)** orchestrate multi-step operations with compensation
 - **Composition** (this chapter) builds extensible pieces that combine
 - **[Observability](./opentelemetry)** wraps functions without polluting them

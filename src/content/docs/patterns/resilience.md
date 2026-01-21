@@ -167,9 +167,9 @@ graph TD
     linkStyle 4 stroke:#0f172a,stroke-width:3px
 ```
 
-**Solution:** Retry at ONE level only—the workflow level. Business functions and infrastructure clients should not retry internally.
+**Solution:** Retry at ONE level only: the workflow level. Business functions and infrastructure clients should not retry internally.
 
-> **Note:** This includes composition-level `withRetry` wrappers (see [Wrapping](./composition#wrapping-add-behavior-without-modifying)). If you use `step.retry()` in workflows, don't also wrap channels with `withRetry`—pick one layer for retry policy.
+> **Note:** This includes composition-level `withRetry` wrappers (see [Wrapping](./composition#wrapping-add-behavior-without-modifying)). If you use `step.retry()` in workflows, don't also wrap channels with `withRetry`. Pick one layer for retry policy.
 
 ---
 

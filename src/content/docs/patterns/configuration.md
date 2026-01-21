@@ -136,7 +136,7 @@ const deps = {
 const userService = createUserService({ deps });
 ```
 
-Functions never read `process.env` directly—they receive typed config through deps.
+Functions never read `process.env` directly. They receive typed config through deps.
 
 ---
 

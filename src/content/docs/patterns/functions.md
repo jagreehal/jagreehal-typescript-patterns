@@ -177,6 +177,21 @@ Different lifetimes deserve different parameters.
 
 ---
 
+## Why Not `fn(args, deps, opts)`?
+
+You'll sometimes see people add a third parameter like `fn(args, deps, opts)`. Don't.
+
+"Options" aren't a third category. They always belong to one of the two you already have:
+
+- **Per-call behavior** (e.g. `dryRun`, `sendEmail: false`, `includeDeleted`) → part of the request, belongs in `args`
+- **Configuration chosen at wiring time** (feature flags, defaults, limits, environment-specific behavior) → belongs in `deps` as injected config
+
+A third `opts` bag usually becomes a dumping ground that hides domain meaning and makes call sites harder to read.
+
+The rule is simple: **per-call = `args`**, **per-app/per-module = `deps`**. No third bucket.
+
+---
+
 ## What About Context?
 
 You might ask: 'What about request-scoped context like trace IDs, user info, or cancellation signals?'
@@ -498,7 +513,7 @@ Group only when the functions are a cohesive unit and genuinely travel together 
    function createUser(args, deps: { db, logger }) { }
    ```
 
-3. **Trust validated input.** Core functions don't re-validate args—that's the boundary's job. See [Validation at the Boundary](./validation).
+3. **Trust validated input.** Core functions don't re-validate args. That's the boundary's job. See [Validation at the Boundary](./validation).
 
 4. **Factory at the boundary.** Wire deps once, expose clean API.
 

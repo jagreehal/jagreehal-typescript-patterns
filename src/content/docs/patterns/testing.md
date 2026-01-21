@@ -260,7 +260,7 @@ it('creates a user and sends welcome email', async () => {
 
 **Why this matters:** If any section grows too large, it signals a problem. A bloated Arrange section suggests the test is too complex or testing too many things. Multiple unrelated assertions indicate you're verifying more than one behavior.
 
-The `fn(args, deps)` pattern naturally keeps Arrange simple—you're just creating an object with mock functions, not orchestrating module mocking magic.
+The `fn(args, deps)` pattern naturally keeps Arrange simple. You're just creating an object with mock functions, not orchestrating module mocking magic.
 
 ---
 

@@ -9,7 +9,7 @@ description: Structure TypeScript monorepos for debuggability, shared configurat
 
 Let's talk about monorepos.
 
-Everyone loves the idea: shared code, one repo, fast iteration. But most monorepo setups quietly fail at the thing that matters most—being able to debug your own code.
+Everyone loves the idea: shared code, one repo, fast iteration. But most monorepo setups quietly fail at the thing that matters most: being able to debug your own code.
 
 ## The Problem
 
@@ -48,7 +48,7 @@ monorepo/
 | Anti-Pattern | Why It Hurts |
 |--------------|--------------|
 | Apps importing from `dist/` | Can't debug source; stale builds go unnoticed |
-| Self-imports via package name | Couples build to path-alias tooling |
+| Self-imports via package name (inside the package) | Couples build to path-alias tooling |
 | Barrel files (`export * from`) | Bloated bundles, circular deps, refactor friction |
 | Premature shared packages | Coordination overhead kills velocity |
 | "One config to rule them all" | Runtime-specific rules don't belong in root |
@@ -60,7 +60,7 @@ monorepo/
 For internal monorepo development, we prefer importing source directly for the fastest iteration. If you publish packages externally, sourcemaps are the non-negotiable fallback (see "When TS Paths Aren't Enough" below).
 
 > **Assumption**: This assumes your app consumes the SDK via workspace linking (pnpm/yarn/npm workspaces), not via an installed npm tarball.
-> TS paths won't help consumers debug your published output—that's what sourcemaps are for.
+> TS paths won't help consumers debug your published output. That's what sourcemaps are for.
 
 The fix is simple: configure TypeScript paths to point to source files, not compiled output.
 
@@ -99,7 +99,7 @@ In your consuming app's `tsconfig.json`:
 
 Now when you import from `@myorg/sdk/queries`, TypeScript resolves it to the source file. Your debugger steps through actual TypeScript. Hot reload catches changes instantly.
 
-> **Bundler configuration required.** TypeScript resolves imports at type-check time; your bundler resolves them at bundle/runtime—they must agree. TS paths only help TypeScript—your bundler needs to know about workspace packages too:
+> **Bundler configuration required.** TS paths are a type-checker feature; your bundler (or Node) still needs its own resolver to load the same files. They must agree. Your bundler needs to know about workspace packages too:
 > - **Next.js**: Add `transpilePackages: ['@myorg/sdk']` in `next.config.js`
 > - **Vite**: Use `vite-tsconfig-paths` plugin or configure `resolve.alias`
 > - **Webpack**: Use `tsconfig-paths-webpack-plugin`
@@ -120,7 +120,7 @@ TS paths solve the staleness problem (always importing fresh source) but don't f
 - Include `sourcesContent: true` (default in most tools) or ship your `src/` folder
 - Ensure consumers' bundlers preserve sourcemaps (not stripped in production builds)
 
-> Some production builds strip or hide sourcemaps by default—verify the deployed artifact still serves them if you rely on runtime debugging.
+> Some production builds strip or hide sourcemaps by default. Verify the deployed artifact still serves them if you rely on runtime debugging.
 
 ### Choose Your Debugging Mode
 
@@ -141,11 +141,13 @@ For CI/production builds, create a separate tsconfig that removes workspace path
   "compilerOptions": {
     "paths": {
       "@/*": ["./src/*"]
-      // @myorg/sdk/* paths removed — forces build to use dist/
+      // @myorg/sdk/* paths removed - forces build to use dist/
     }
   }
 }
 ```
+
+> **Enforce in CI**: Use `pnpm --filter @myorg/web build --project tsconfig.prod.json` (or set `TSCONFIG=tsconfig.prod.json` in your CI environment) to ensure production builds always consume `dist/`.
 
 ### VS Code Debugging
 
@@ -193,7 +195,7 @@ Now F5 launches the app and breakpoints in SDK source files work directly.
 
 I hear you. If TypeScript is resolving into raw source files across packages, won't builds crawl?
 
-In practice, no. TypeScript's incremental compilation (`tsBuildInfoFile`) and project references handle this well. The bottleneck in most monorepos is I/O and dependency resolution, not type-checking source files.
+In practice, often no. TypeScript's incremental compilation (`tsBuildInfoFile`) and project references handle this well. The bottleneck in most monorepos is I/O and dependency resolution, not type-checking source files.
 
 If you *do* hit slowdowns with 10+ packages, consider:
 
@@ -206,7 +208,7 @@ But start with the simple approach. Optimize when profiling shows a real problem
 
 ## Shared Config: Extend and Override
 
-Every package needs TypeScript and ESLint config. Don't copy-paste—create base configs at the root that packages extend. For Prettier, keep a single root config and use `eslint-config-prettier` to avoid rule conflicts.
+Every package needs TypeScript and ESLint config. Don't copy-paste. Create base configs at the root that packages extend. For Prettier, keep a single root config and use `eslint-config-prettier` to avoid rule conflicts.
 
 ```mermaid
 graph TD
@@ -346,7 +348,7 @@ The web app imports one function: `import { formatOrder } from '@myorg/sdk'`. In
 - **Circular dependencies**: Barrels make it easy to create import cycles that cause runtime errors or undefined values
 - **Refactoring friction**: Moving code means updating the barrel, which breaks every consumer's imports
 
-A tiny import can balloon into a much larger bundle—but worse, your codebase becomes hard to refactor and debug.
+A tiny import can balloon into a much larger bundle, but worse, your codebase becomes hard to refactor and debug.
 
 ### Explicit Entry Points with tsup
 
@@ -361,6 +363,8 @@ export default defineConfig({
     // Each module gets its own entry point
     db: 'src/db/index.ts',
     customers: 'src/customers/index.ts',
+    queries: 'src/queries/index.ts',
+    logger: 'src/logger/index.ts',
   },
   format: ['esm'],
   dts: true,
@@ -389,11 +393,21 @@ Map each entry point in package.json:
       "import": "./dist/customers.js",
       "types": "./dist/customers.d.ts"
     },
+    "./queries": {
+      "import": "./dist/queries.js",
+      "types": "./dist/queries.d.ts"
+    },
+    "./logger": {
+      "import": "./dist/logger.js",
+      "types": "./dist/logger.d.ts"
+    }
   }
 }
 ```
 
-Notice there's no root `"."` export. This is intentional consumers *must* import from `@myorg/sdk/logger`, not `@myorg/sdk`. The `sideEffects: false` tells bundlers they can safely tree-shake unused exports.
+Notice there's no root `"."` export. This is intentional: consumers *must* import from `@myorg/sdk/logger`, not `@myorg/sdk`. If you prefer discoverability, you can add a `"."` export as a type-only or thin entry point, but avoid `export * from` barrels.
+
+The `sideEffects: false` tells bundlers they can safely tree-shake unused exports. Only set this if your modules are actually side-effect free on import (no top-level code that runs just by importing).
 
 ### Consumer Usage
 
@@ -462,7 +476,7 @@ packages:
 
 `dependsOn: ["^build"]` means "build my dependencies first." When you run `turbo build` in the web app, Turborepo automatically builds the SDK first. No manual coordination.
 
-> **Note**: Each package must define matching scripts (`build`, `lint`, `test`) in its `package.json` for Turborepo to orchestrate them. Each package's build script defines its own outputs; Turborepo caches per-package. The `outputs` array lists all possible outputs across packages—`dist/**` for SDK packages, `.next/**` for Next.js apps, etc.
+> **Note**: Each package must define matching scripts (`build`, `lint`, `test`) in its `package.json` for Turborepo to orchestrate them. Each package's build script defines its own outputs; Turborepo caches per-package. The `outputs` array lists all possible outputs across packages: `dist/**` for SDK packages, `.next/**` for Next.js apps, etc.
 
 ---
 
