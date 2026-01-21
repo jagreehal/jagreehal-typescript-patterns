@@ -216,7 +216,7 @@ It catches the cases where positional params hurt readability: when there are mu
 
 **Migrating Existing Codebases**
 
-The `prefer-object-params` rule currently reports violations but doesn't auto-fix them (the transformation is too complex for safe automation -call sites need updating too).
+The `prefer-object-params` rule currently reports violations but doesn't auto-fix them (the transformation is too complex for safe automation since call sites need updating too).
 
 For large-scale migrations, consider:
 

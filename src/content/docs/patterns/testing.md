@@ -512,7 +512,7 @@ No database connection. Tests run in milliseconds. And TypeScript ensures you're
 
 ### Test Stubs with Faker
 
-Integration tests need realistic data. Don't hand-craft UUIDs and names -use [Faker](https://fakerjs.dev/) to generate them:
+Integration tests need realistic data. Don't hand-craft UUIDs and names. Use [Faker](https://fakerjs.dev/) to generate them:
 
 ```typescript
 // src/test-utils/stubs.ts

@@ -113,7 +113,7 @@ export default function () {
 }
 ```
 
-> **Why `sleep()`?** In k6, a Virtual User (VU) executes the script in a loop. Without `sleep`, a single VU could generate hundreds of requests per second -accidentally DDoS-ing your local machine. `sleep` simulates realistic human behavior ("think time") between actions, like a user reading a page before clicking. Without it, you're not testing "10 users" -you're testing "10 infinite loops hammering your API."
+> **Why `sleep()`?** In k6, a Virtual User (VU) executes the script in a loop. Without `sleep`, a single VU could generate hundreds of requests per second, accidentally DDoS-ing your local machine. `sleep` simulates realistic human behavior ("think time") between actions, like a user reading a page before clicking. Without it, you're not testing "10 users". You're testing "10 infinite loops hammering your API."
 
 Run it:
 
@@ -351,7 +351,7 @@ Without load testing, you'd never see that 1,750ms connection pool wait. The tra
 
 ## Setting SLOs and Thresholds
 
-Don't just measure -set expectations. k6 thresholds fail your test if SLOs aren't met:
+Don't just measure. Set expectations. k6 thresholds fail your test if SLOs aren't met:
 
 ```javascript
 export const options = {

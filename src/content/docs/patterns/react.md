@@ -19,7 +19,7 @@ The goal: **keep reusable React code independent of routing/rendering frameworks
 - **Split containers from views.** Components that read URL / fetch / subscribe are separated from presentational components. **Rule:** Reusable folders (`components/`, `hooks/`, `queries/`, `lib/`) are framework-import-forbidden. Containers live only at the framework boundary (`app/`, `pages/`, `routes/`).
 - **Error boundaries + Suspense are not optional.**
 - **Every component has a paired Storybook story.**
-- **Testing is value-driven.** Don't test for the sake of it -test where it reduces real risk.
+- **Testing is value-driven.** Don't test for the sake of it. Test where it reduces real risk.
 - **Tailwind default.** Favor composability and consistent UI patterns.
 
 ---
@@ -785,11 +785,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 - If your framework supports SSR/RSC/prefetch, do it at the boundary.
 - The reusable code still uses the same React Query key conventions and hooks.
-- Hydration is wiring -not architecture.
+- Hydration is wiring, not architecture.
 
 ```tsx
-// Next.js App Router example -prefetch at the route boundary
-// app/users/[id]/page.tsx (this IS the container -lives in app/, not components/)
+// Next.js App Router example: prefetch at the route boundary
+// app/users/[id]/page.tsx (this IS the container, lives in app/, not components/)
 import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query';
 import { userKeys } from '@/queries/userKeys';
 import { fetchUser } from '@/queries/fetchUser';
@@ -1134,8 +1134,8 @@ function DashboardPage() {
 
 Since you're mandating both Suspense and boundaries, understand the key gotchas:
 
-1. **Suspense only handles "pending", not "error"** -You still need an ErrorBoundary around Suspense subtrees
-2. **React Query suspense mode throws during render** -Errors are caught by ErrorBoundary (good), but you need to reset queries when retrying
+1. **Suspense only handles "pending", not "error".** You still need an ErrorBoundary around Suspense subtrees
+2. **React Query suspense mode throws during render.** Errors are caught by ErrorBoundary (good), but you need to reset queries when retrying
 
 The canonical pattern:
 
@@ -1483,9 +1483,9 @@ const AppContext = createContext<{
 
 Extract a hook when:
 
-1. **Reuse** -The same stateful logic appears in multiple components
-2. **Complexity** -A component's logic is hard to follow
-3. **Testing** -You want to test the logic separately from the UI
+1. **Reuse.** The same stateful logic appears in multiple components
+2. **Complexity.** A component's logic is hard to follow
+3. **Testing.** You want to test the logic separately from the UI
 
 Don't extract a hook just to "organize code." If it's only used once and the component is readable, leave it inline.
 
@@ -2019,10 +2019,10 @@ function EventForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)}>
-      {/* Regular inputs -uncontrolled via register */}
+      {/* Regular inputs: uncontrolled via register */}
       <input {...register('title')} />
 
-      {/* DatePicker needs controlled -use Controller */}
+      {/* DatePicker needs controlled: use Controller */}
       <Controller
         name="startDate"
         control={control}
@@ -2142,7 +2142,7 @@ function CreateUserForm({ onSubmit, isSubmitting, serverError }: CreateUserFormP
 
 ## React Server Components (RSC)
 
-> **Note:** This section applies to frameworks that support RSC (Next.js App Router, etc.). **If your framework doesn't support RSC (Vite SPA, CRA, older Next.js), skip this section** -the Container/View pattern from earlier sections is your model. RSC just moves the Container to the server.
+> **Note:** This section applies to frameworks that support RSC (Next.js App Router, etc.). **If your framework doesn't support RSC (Vite SPA, CRA, older Next.js), skip this section.** The Container/View pattern from earlier sections is your model. RSC just moves the Container to the server.
 
 ### RSC Mental Model
 
@@ -2196,7 +2196,7 @@ export function UserProfileView({ user }: UserProfileViewProps) {
     <div className="p-6">
       <h1 className="text-2xl font-bold">{user.name}</h1>
       <p className="text-gray-600">{user.email}</p>
-      {/* Static content -no client JS needed */}
+      {/* Static content: no client JS needed */}
     </div>
   );
 }
@@ -2254,10 +2254,10 @@ export default async function DashboardPage() {
 
   return (
     <div className="grid gap-4">
-      {/* Server Component -rendered on server, no client JS */}
+      {/* Server Component: rendered on server, no client JS */}
       <DashboardStats stats={stats} />
 
-      {/* Client Component -hydrated on client for interactivity */}
+      {/* Client Component: hydrated on client for interactivity */}
       <LiveNotifications userId={stats.userId} />
     </div>
   );
@@ -2526,12 +2526,12 @@ export const PaymentDeclined: Story = {
 
 ### Development Workflow
 
-1. **Sketch the flow** -Create empty stories for each step
-2. **Build views** -Implement `StepView` components with mock props
-3. **Add MSW handlers** -Simulate API responses
-4. **Demo to stakeholders** -Get feedback before backend is ready
-5. **Wire to real backend** -Replace MSW with real API
-6. **Keep stories** -They become regression tests
+1. **Sketch the flow.** Create empty stories for each step
+2. **Build views.** Implement `StepView` components with mock props
+3. **Add MSW handlers.** Simulate API responses
+4. **Demo to stakeholders.** Get feedback before backend is ready
+5. **Wire to real backend.** Replace MSW with real API
+6. **Keep stories.** They become regression tests
 
 This approach enables **parallel frontend/backend development** and catches UX issues before they're expensive to fix.
 
@@ -3117,7 +3117,7 @@ Now every story automatically has MSW + deterministic mock state. Individual sto
 
 ### Vite: Recommended for Dev Tooling, Not an Architectural Dependency
 
-Use Vite for fast dev experience (Storybook builder, TanStack Start, component playgrounds). Don't architect as if Vite is always present -your code should work with any bundler.
+Use Vite for fast dev experience (Storybook builder, TanStack Start, component playgrounds). Don't architect as if Vite is always present. Your code should work with any bundler.
 
 ---
 
@@ -3287,9 +3287,9 @@ function VirtualProductList({ products }: { products: Product[] }) {
 
 When you need to render user-provided content:
 
-1. **Prefer plain text** -render as text nodes, not HTML
-2. **Use markdown libraries** -they handle escaping
-3. **Sanitize if HTML is required** -use DOMPurify with strict allowlists
+1. **Prefer plain text.** Render as text nodes, not HTML
+2. **Use markdown libraries.** They handle escaping
+3. **Sanitize if HTML is required.** Use DOMPurify with strict allowlists
 
 ```tsx
 // ✅ SAFE: Render as text (default React behavior)

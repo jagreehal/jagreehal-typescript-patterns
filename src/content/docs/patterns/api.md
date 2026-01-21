@@ -259,7 +259,7 @@ throw new ORPCError(result.error, {
 });
 ```
 
-> **Rule: `ORPCError(code)` must match `ErrorResponse.code`**. Using the same string for both simplifies logs, metrics, and client error handling. For example, `throw new ORPCError("NOT_FOUND", { data: createErrorResponse("NOT_FOUND", ...) })` -never mix codes like `ORPCError("BAD_REQUEST")` with `createErrorResponse("MISSING_FIELD")`.
+> **Rule: `ORPCError(code)` must match `ErrorResponse.code`**. Using the same string for both simplifies logs, metrics, and client error handling. For example, `throw new ORPCError("NOT_FOUND", { data: createErrorResponse("NOT_FOUND", ...) })`. Never mix codes like `ORPCError("BAD_REQUEST")` with `createErrorResponse("MISSING_FIELD")`.
 
 **Why this matters:**
 - Clients write one error handler that works everywhere
@@ -790,7 +790,7 @@ const corsConfig = {
 
 > **Critical**: Browsers reject `credentials: true` with `Access-Control-Allow-Origin: *`. Always echo the specific allowed origin and include `Vary: Origin` so caches don't mix up responses.
 
-> **Non-browser requests**: When `Origin` is absent (curl, server-to-server), CORS doesn't apply -it's a browser-only policy. You don't need to set any CORS headers for these requests; just process them normally.
+> **Non-browser requests**: When `Origin` is absent (curl, server-to-server), CORS doesn't apply. It's a browser-only policy. You don't need to set any CORS headers for these requests; just process them normally.
 
 ### Common CORS Mistakes
 
@@ -1460,10 +1460,10 @@ describe("getUser", () => {
 
 **Why this works:**
 
-- No `vi.mock` path coupling -refactor freely
-- No hoisting magic -clear execution order
-- No global state -tests are isolated
-- Type-safe mocks -`mock<GetUserDeps>()` enforces the interface
+- No `vi.mock` path coupling. Refactor freely
+- No hoisting magic. Clear execution order
+- No global state. Tests are isolated
+- Type-safe mocks. `mock<GetUserDeps>()` enforces the interface
 
 ### Integration Testing
 
@@ -1544,7 +1544,7 @@ if (
 
 ## The Complete Handler Pattern
 
-Putting it all together -every pattern in one example:
+Putting it all together. Every pattern in one example:
 
 ```typescript
 import { os, ORPCError } from "@orpc/server";
@@ -1680,7 +1680,7 @@ export const createOrder = os
 
 7. **Idempotency for mutations.** Use idempotency keys for POST/PUT to prevent duplicates on retry.
 
-8. **Context flows through.** Request ID, logger, user -available everywhere.
+8. **Context flows through.** Request ID, logger, user: available everywhere.
 
 9. **Document automatically.** OpenAPI generated from code, not maintained separately.
 
@@ -1727,16 +1727,16 @@ export const createOrder = os
 
 Over these patterns, we've constructed a complete TypeScript application architecture:
 
-1. **[Testing drives design](./testing)** -Testability revealed the need for explicit deps
-2. **[Functions over classes](./functions)** -`fn(args, deps)` pattern
-3. **[Validation at the boundary](./validation)** -Zod schemas, branded types
-4. **[Typed errors](./errors)** -Result types, railway-oriented programming
-5. **[Observability](./opentelemetry)** -`trace()` wrapper, structured logging
-6. **[Resilience](./resilience)** -Retry, timeout, circuit breaker at workflow level
-7. **[Configuration](./configuration)** -Validate at startup, secrets in memory
-8. **[API design](./api)** -This pattern: handlers, health checks, security
+1. **[Testing drives design](./testing)**: Testability revealed the need for explicit deps
+2. **[Functions over classes](./functions)**: `fn(args, deps)` pattern
+3. **[Validation at the boundary](./validation)**: Zod schemas, branded types
+4. **[Typed errors](./errors)**: Result types, railway-oriented programming
+5. **[Observability](./opentelemetry)**: `trace()` wrapper, structured logging
+6. **[Resilience](./resilience)**: Retry, timeout, circuit breaker at workflow level
+7. **[Configuration](./configuration)**: Validate at startup, secrets in memory
+8. **[API design](./api)**: This pattern: handlers, health checks, security
 
-Each pattern builds on the previous. They're not independent -they're a cohesive architecture.
+Each pattern builds on the previous. They're not independent. They're a cohesive architecture.
 
 ---
 

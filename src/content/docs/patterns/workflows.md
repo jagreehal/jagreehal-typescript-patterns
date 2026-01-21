@@ -441,7 +441,7 @@ Saga A: reserve(item) → success (1 left → 0 left)
 Saga B: reserve(item) → success (0 left → -1 left) ← oversold!
 ```
 
-**Or worse -the compensation race:**
+**Or worse, the compensation race:**
 
 ```
 Saga A: reserve → charge → [charge fails] → release

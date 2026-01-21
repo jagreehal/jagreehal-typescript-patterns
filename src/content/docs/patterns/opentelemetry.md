@@ -842,7 +842,7 @@ The pattern follows **tail sampling**: you decide what to log *after* the span c
 
 Key characteristics of canonical log lines:
 
-- **High cardinality**: Include user IDs, order IDs, trace IDs -fields with many unique values that enable precise queries
+- **High cardinality**: Include user IDs, order IDs, trace IDs (fields with many unique values that enable precise queries)
 - **Flat structure**: Use dot-notation (`user.id`, `cart.total_cents`) instead of nested objects for easier querying
 - **Emitted at span end**: All context is available, including duration and final status
 - **One per request**: Set `rootSpansOnly: true` to emit only for root spans
@@ -859,7 +859,7 @@ For a complete working example, see the [autotel canonical logs example](https:/
 2. **Wrap with trace().** Observability is orthogonal to business logic (Observer pattern).
 3. **Use semantic conventions.** Standard attribute names (`user.id`, `http.method`) enable automatic backend correlation.
 4. **Correlate logs and traces.** Include `traceId` and `spanId` in every log message.
-5. **Emit canonical log lines.** One wide event per request with all context -optimize for querying, not writing.
+5. **Emit canonical log lines.** One wide event per request with all context. Optimize for querying, not writing.
 6. **Map Result to span status.** ok = success, err = failure.
 7. **Nested traces work automatically.** No manual context passing.
 8. **Tests don't change.** trace() is transparent when tracing is disabled.

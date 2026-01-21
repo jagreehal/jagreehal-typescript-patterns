@@ -143,7 +143,7 @@ By keeping retry at the workflow level, you avoid this explosion.
 
 **The Blast Radius Problem:** Without centralized retry policy, a minor blip in a downstream service can become a self-inflicted DDoS. If every layer retries 3×, and you have 3 layers, a single failure becomes 27 requests. Multiply by 100 concurrent users and you've created a retry storm that prevents the failing service from recovering.
 
-You add retries to make things more reliable. The database has a brief hiccup. Your retries kick in -all of them, at every layer, for every user. The database, already struggling, now receives 27× the normal load. It doesn't recover. It crashes harder. Your retries made the outage worse.
+You add retries to make things more reliable. The database has a brief hiccup. Your retries kick in, all of them, at every layer, for every user. The database, already struggling, now receives 27× the normal load. It doesn't recover. It crashes harder. Your retries made the outage worse.
 
 ```mermaid
 graph TD
@@ -331,7 +331,7 @@ Use these as starting points and tune based on your SLOs:
 
 ### Why Jitter Matters
 
-Without jitter, all your service instances retry at the exact same moment -a **thundering herd** that can overwhelm a recovering system:
+Without jitter, all your service instances retry at the exact same moment. This creates a **thundering herd** that can overwhelm a recovering system:
 
 ```text
 Without jitter:
