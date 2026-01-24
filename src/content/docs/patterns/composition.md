@@ -67,24 +67,39 @@ Every new requirement adds another conditional. The function grows unbounded.
 
 **The composable approach builds independent pieces that share a uniform interface:**
 
-```typescript
-type Notification = unknown; // intentionally opaque here; defined at the boundary
+First, define your boundary type once:
 
-// Each channel is a function with the same signature
+```typescript
+// types.ts
+type Notification = {
+  id: string;
+  userId: string;
+  email?: string;
+  phone?: string;
+  subject: string;
+  body: string;
+};
+```
+
+Then build composable pieces:
+
+```typescript
+// Core functions follow fn(args, deps): sendEmail(args, deps) => Promise<void>
+// Factory functions bind deps: createSendEmail(deps) => (args) => sendEmail(args, deps)
+// Composed interface used everywhere: SendChannel = (args) => Promise<void>
+
 type SendChannel = (args: { notification: Notification }) => Promise<void>;
 
 // Each channel is independent and focused
-// (In real code, factories bind deps. We'll see that shortly.)
-const sendEmail: SendChannel = async (args) => { /* just email */ };
-const sendSms: SendChannel = async (args) => { /* just SMS */ };
-const sendAudit: SendChannel = async (args) => { /* just audit log */ };
+const sendEmail = createSendEmail({ emailClient });
+const sendSms = createSendSms({ smsClient });
+const sendAudit = createSendAudit({ auditDb });
 
 // Compose at startup
 const channels: SendChannel[] = [sendEmail, sendSms, sendAudit];
 
 // Fan-out: send to all channels
-const input = { notification };
-await Promise.all(channels.map(ch => ch(input)));
+await Promise.all(channels.map(ch => ch({ notification })));
 ```
 
 New channel? Add it to the array. No existing code changes.
@@ -183,20 +198,16 @@ Adding Slack? Modify the function. Adding a data warehouse? Modify it again.
 
 ```typescript
 // types.ts
-type Notification = {
-  id: string;
-  userId: string;
-  email?: string;
-  phone?: string;
-  subject: string;
-  body: string;
-};
 
 // Uniform interface: every channel is a function with this shape
 type SendChannel = (args: { notification: Notification }) => Promise<void>;
 ```
 
-Each channel follows [fn(args, deps)](./functions) deps are bound at creation, meaning the call signature stays stable even as dependencies vary. This keeps every channel callable the same way, so arrays and wrappers don't care which dependencies it needs:
+Each channel follows [fn(args, deps)](./functions). The factory functions (`createSendEmail`, `createSendSms`, etc.) are **implemented functions** that bind deps at creation time, returning a function that takes only args. This keeps every channel callable the same way, so arrays and wrappers don't care which dependencies it needs:
+
+> This is just pre-binding dependencies:
+> `createSendEmail(deps)` returns `(args) => sendEmail(args, deps)`
+> The core implementation stays `fn(args, deps)`, and the composed interface becomes `(args) => ...`.
 
 ```typescript
 // channels/email.ts
@@ -245,10 +256,10 @@ export function createSendAudit(deps: SendAuditDeps): SendChannel {
 }
 ```
 
-Now compose them in one place, your [composition root](./functions#where-does-this-live) (the single location where your app is wired together at startup):
+Now create a service factory that wires channels together:
 
 ```typescript
-// notification-service.ts (composition root)
+// notification-service.ts (service factory)
 import { createSendEmail } from './channels/email';
 import { createSendSms } from './channels/sms';
 import { createSendAudit } from './channels/audit';
@@ -276,6 +287,39 @@ export function createNotificationService(deps: NotificationServiceDeps) {
 }
 ```
 
+The actual [composition root](./functions#where-does-this-live) is where you create clients and wire services together:
+
+```typescript
+// main.ts (composition root)
+const logger = createLogger(config.logging);
+const emailClient = createEmailClient(config.email);
+const smsClient = createSmsClient(config.sms);
+const auditDb = createAuditDb(config.database);
+
+const notificationService = createNotificationService({
+  logger,
+  emailClient,
+  smsClient,
+  auditDb,
+});
+```
+
+This keeps "single place knows everything" discipline—`main.ts` sees all dependencies, service factories stay focused.
+
+**Choose your failure semantics.** The `Promise.all` above is all-or-nothing: it fails fast on the first rejection, potentially leaving other sends in-flight. Pick what fits your use case:
+
+```typescript
+// All-or-nothing (fail fast)
+await Promise.all(channels.map(ch => ch(args)));
+
+// Best-effort (collect errors, don't fail the whole operation)
+const results = await Promise.allSettled(channels.map(ch => ch(args)));
+const errors = results.filter(r => r.status === 'rejected');
+if (errors.length > 0) {
+  // Log or handle partial failures
+}
+```
+
 **Adding Slack?** Write the channel factory, add one line:
 
 ```typescript
@@ -298,10 +342,10 @@ if (deps.slackClient) {
 
 The `notify` function never changes. It doesn't know about Slack, email, or SMS. It just calls each channel.
 
-| Approach             | Adding New Destination                      |
-|----------------------|---------------------------------------------|
-| Configuration object | Modify sender, add option, add conditional  |
-| Fan-out with interface | Write channel factory, add to array       |
+| Approach               | Adding New Destination                      |
+|------------------------|---------------------------------------------|
+| Configuration object   | Modify sender, add option, add conditional  |
+| Fan-out with interface | Write channel factory, add to array         |
 
 ---
 
@@ -361,36 +405,43 @@ const sendEmail = createSendEmail({ emailClient });
 const sendEmailWithRetry = withRetry(sendEmail, 3);
 ```
 
-**Wrappers compose.** Want logging too?
+**Wrappers compose.** Want logging too? Inject the logger to stay consistent with [fn(args, deps)](./functions):
 
 ```typescript
 // wrappers/logging.ts
-export function withLogging(channel: SendChannel, name: string): SendChannel {
-  return async (args) => {
-    console.log(`[${name}] Sending ${args.notification.id}`);
-    try {
-      await channel(args);
-      console.log(`[${name}] Sent ${args.notification.id}`);
-    } catch (e) {
-      console.error(`[${name}] Failed ${args.notification.id}`, e);
-      throw e;
-    }
+type Logger = {
+  info: (msg: string) => void;
+  error: (msg: string, err?: unknown) => void;
+};
+
+export function withLogging(logger: Logger, name: string) {
+  return (channel: SendChannel): SendChannel => {
+    return async (args) => {
+      logger.info(`[${name}] Sending ${args.notification.id}`);
+      try {
+        await channel(args);
+        logger.info(`[${name}] Sent ${args.notification.id}`);
+      } catch (e) {
+        logger.error(`[${name}] Failed ${args.notification.id}`, e);
+        throw e;
+      }
+    };
   };
 }
 ```
 
 ```typescript
 // Compose: logging wraps retry wraps email
-const robustEmail = withLogging(withRetry(sendEmail, 3), 'email');
+const robustEmail = withLogging(logger, 'email')(withRetry(sendEmail, 3));
 ```
 
 Each wrapper is independent. You can mix and match per channel:
 
 ```typescript
 const channels: SendChannel[] = [
-  withLogging(withRetry(sendEmail, 3), 'email'),
+  withLogging(logger, 'email')(withRetry(sendEmail, 3)),
   withRetry(sendSms, 2),
-  withLogging(sendAudit, 'audit'),
+  withLogging(logger, 'audit')(sendAudit),
 ];
 ```
 
@@ -405,7 +456,7 @@ Let's rebuild the notification system from the opening. Small pieces, composed.
 ```
 
 ```typescript
-// notification-service.ts (composition root)
+// notification-service.ts (service factory)
 import { createSendEmail } from './channels/email';
 import { createSendSms } from './channels/sms';
 import { createSendAudit } from './channels/audit';
@@ -416,6 +467,7 @@ type NotificationServiceDeps = {
   emailClient: EmailClient;
   smsClient: SmsClient;
   auditDb: AuditDb;
+  logger: Logger;
   slackClient?: SlackClient;
   pushService?: PushService;
 };
@@ -426,9 +478,9 @@ export function createNotificationService(deps: NotificationServiceDeps) {
   const sendAudit = createSendAudit({ auditDb: deps.auditDb });
 
   const channels: SendChannel[] = [
-    withLogging(withRetry(sendEmail, 3), 'email'),
-    withLogging(withRetry(sendSms, 2), 'sms'),
-    withLogging(sendAudit, 'audit'),
+    withLogging(deps.logger, 'email')(withRetry(sendEmail, 3)),
+    withLogging(deps.logger, 'sms')(withRetry(sendSms, 2)),
+    withLogging(deps.logger, 'audit')(sendAudit),
   ];
 
   return {
@@ -460,7 +512,7 @@ export function createSendPush(deps: SendPushDeps): SendChannel {
 // notification-service.ts (inside createNotificationService, after channels array)
 if (deps.pushService) {
   const sendPush = createSendPush({ pushService: deps.pushService });
-  channels.push(withLogging(withRetry(sendPush, 2), 'push'));
+  channels.push(withLogging(deps.logger, 'push')(withRetry(sendPush, 2)));
 }
 ```
 
@@ -490,7 +542,7 @@ These patterns aren't arbitrary. They embody principles that make code maintaina
 
 **Single Responsibility.** Each piece does one thing. `createSendEmail` sends email. `withRetry` adds retry. `withLogging` adds logging. When retry logic needs to change, you change one function, not every channel.
 
-**Dependency Inversion.** The composition root depends on `SendChannel`, not on `EmailClient` or `SmsClient` directly. High-level policy (fan-out to all channels) doesn't depend on low-level details (how email is sent). Both depend on the abstraction.
+**Dependency Inversion.** The `notify` function depends on `SendChannel`, not on `EmailClient` or `SmsClient` directly. The policy is "broadcast to channels"; the channels themselves are details supplied at wiring time. Both policy and details depend on the abstraction (`SendChannel`), not on each other.
 
 **Liskov Substitution.** Any `SendChannel` can replace another. Wrappers return `SendChannel`, so `withRetry(sendEmail)` is substitutable wherever `sendEmail` was used. This is why wrappers stack. Each layer preserves the contract.
 

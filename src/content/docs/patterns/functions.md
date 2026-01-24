@@ -3,13 +3,13 @@ title: Functions Over Classes
 description: Learn the fn(args, deps) pattern for explicit dependency injection, making your code testable and composable.
 ---
 
-*Previously: [Why This Pattern Exists](./testing). We saw how testability drives design. Now let's see the pattern itself.*
+_Previously: [Why This Pattern Exists](./testing). We saw how testability drives design. Now let's see the pattern itself._
 
 I want to talk about dependency injection.
 
 Wait, don't leave. I know "dependency injection" sounds like something from a Java enterprise architecture book from 2005. It sounds complicated.
 
-But here's the thing: you're already doing it. Every time you pass something to a function instead of reaching for a global, that's dependency injection. The question isn't whether to do it. It's *how*.
+But here's the thing: you're already doing it. Every time you pass something to a function instead of reaching for a global, that's dependency injection. The question isn't whether to do it. It's _how_.
 
 ---
 
@@ -24,7 +24,7 @@ class UserService {
     private logger: Logger,
     private cache: Cache,
     private mailer: Mailer,
-    private metrics: Metrics
+    private metrics: Metrics,
   ) {}
 
   async getUser(userId: string): Promise<User | null> {
@@ -43,7 +43,7 @@ class UserService {
 
 This looks fine at first. But something subtle is happening here.
 
-Look at `getUser`. It only needs `db` and `logger`. But to test it, you have to satisfy the *entire* constructor, including `cache`, `mailer`, and `metrics` that it doesn't use.
+Look at `getUser`. It only needs `db` and `logger`. But to test it, you have to satisfy the _entire_ constructor, including `cache`, `mailer`, and `metrics` that it doesn't use.
 
 A new developer joins. They ask: "What does `getUser` need?" You point to the constructor: five dependencies. They mock all five. The test passes. Two months later, someone adds `this.metrics.increment('user_fetched')` inside `getUser`. The test still passes -but now it's lying. It doesn't verify that metric increment ever happened, because the mock was set up blindly.
 
@@ -56,12 +56,12 @@ graph TD
     A[constructor<br/>db, logger, cache, mailer, metrics] --> B[getUser<br/>uses 2]
     A --> C[createUser<br/>uses 3]
     A --> D[method3<br/>uses 1]
-    
+
     style A fill:#475569,stroke:#0f172a,stroke-width:2px,color:#fff
     style B fill:#64748b,stroke:#0f172a,stroke-width:2px,color:#fff
     style C fill:#64748b,stroke:#0f172a,stroke-width:2px,color:#fff
     style D fill:#64748b,stroke:#0f172a,stroke-width:2px,color:#fff
-    
+
     linkStyle 0 stroke:#0f172a,stroke-width:3px
     linkStyle 1 stroke:#0f172a,stroke-width:3px
     linkStyle 2 stroke:#0f172a,stroke-width:3px
@@ -74,34 +74,34 @@ graph TD
 What if we wrote functions instead?
 
 ```typescript
-type GetUserDeps = {
-  db: Database;
-  logger: Logger;
-};
+// Define Args and Deps explicitly (contract-first)
+type GetUserArgs = { userId: string };
+type GetUserDeps = { db: Database; logger: Logger };
 
 async function getUser(
-  args: { userId: string },
-  deps: GetUserDeps
+  args: GetUserArgs,
+  deps: GetUserDeps,
 ): Promise<User | null> {
   deps.logger.info(`Getting user ${args.userId}`);
   return deps.db.findUser(args.userId);
 }
 ```
 
-Now look at that signature. You can see *exactly* what `getUser` needs:
-- `args`: the data for this specific call
-- `deps`: the infrastructure it relies on
+Now look at that signature. You can see _exactly_ what `getUser` needs:
 
-A new developer joins. They ask: "What does `getUser` need?" You point to the type: `GetUserDeps`. Two things: `db` and `logger`. That's it. If someone adds a new dependency, the type changes. Tests that don't mock it fail to compile. You can't accidentally ignore new dependencies.
+- `args`: the data for this specific call (`GetUserArgs`)
+- `deps`: the infrastructure it relies on (`GetUserDeps`)
+
+A new developer joins. They ask: "What does `getUser` need?" You point to the types: `GetUserArgs` and `GetUserDeps`. If someone adds a new dependency or argument, the type changes. Tests that don't mock it fail to compile. You can't accidentally ignore new dependencies.
 
 No hidden state. No constructor that accumulates junk. The function declares its contract explicitly.
 
-Yes, this is just functions + closures -and that's a feature, not a workaround.
+Yes, this is just functions + closures, and that's a feature, not a workaround.
 
 This is the core pattern:
 
 ```typescript
-fn(args, deps)
+fn(args, deps);
 ```
 
 - **args**: what varies per call (userId, input data)
@@ -109,9 +109,9 @@ fn(args, deps)
 
 ```mermaid
 graph LR
-    A[getUser args, deps<br/>deps: db, logger] 
+    A[getUser args, deps<br/>deps: db, logger]
     B[createUser args, deps<br/>deps: db, logger, mailer]
-    
+
     style A fill:#475569,stroke:#0f172a,stroke-width:2px,color:#fff
     style B fill:#64748b,stroke:#0f172a,stroke-width:2px,color:#fff
 ```
@@ -122,7 +122,7 @@ graph LR
 
 I hear you. Having to pass deps everywhere sounds tedious. Won't your call sites become cluttered with infrastructure?
 
-Here's the trick: you wire deps *once* at the boundary.
+Here's the trick: you wire deps _once_ at the boundary.
 
 ```typescript
 // user-service/index.ts
@@ -133,8 +133,7 @@ type UserServiceDeps = GetUserDeps & CreateUserDeps;
 
 export function createUserService({ deps }: { deps: UserServiceDeps }) {
   return {
-    getUser: ({ userId }: { userId: string }) =>
-      getUser({ userId }, deps),
+    getUser: ({ userId }: { userId: string }) => getUser({ userId }, deps),
     createUser: ({ name, email }: { name: string; email: string }) =>
       createUser({ name, email }, deps),
   };
@@ -155,8 +154,111 @@ await userService.createUser({ name: 'Alice', email: 'alice@example.com' });
 No deps passing at the call site. The factory bound them once.
 
 You get both worlds:
+
 - Functions stay independent (per-function deps)
 - Call sites stay clean (factory binds deps)
+
+---
+
+## Do I Have to Pass `deps` Every Time?
+
+No, you only need to _declare_ dependencies explicitly in the implementation. You don't need to _thread_ them through every call site.
+
+The core pattern stays:
+
+```typescript
+fn(args, deps);
+```
+
+But you can always produce a "wired" version:
+
+```typescript
+fnWithDeps(deps) -> (args) => fn(args, deps)
+```
+
+In other words:
+
+```typescript
+fn(deps) -> fn(args) = fn(args, deps)
+```
+
+This is commonly known as **partial application**. We keep the core function in the explicit form `fn(args, deps)` and partially apply `deps` at the boundary to produce a cleaner call signature.
+
+### Example: one implementation, many "wired" variants
+
+```typescript
+type NotifyArgs = { name: string };
+type NotifyDeps = { notify: (name: string) => Promise<void> };
+
+// ✅ Core implementation is explicit and testable
+export async function notify(args: NotifyArgs, deps: NotifyDeps) {
+  await deps.notify(args.name);
+}
+
+// ✅ Boundary wiring: pre-bind deps once, get a clean call signature
+export const notifyViaSlack = (deps: NotifyDeps) => (args: NotifyArgs) =>
+  notify(args, deps);
+
+export const notifyViaWebhook = (deps: NotifyDeps) => (args: NotifyArgs) =>
+  notify(args, deps);
+```
+
+Now your application code calls:
+
+```typescript
+const notifySlack = notifyViaSlack(slackDeps);
+await notifySlack({ name: 'Alice' });
+```
+
+But your tests still hit the core function directly:
+
+```typescript
+await notify({ name: 'Alice' }, { notify: mockNotify });
+```
+
+### Still testable, still injectable
+
+Binding dependencies with partial application doesn't reduce testability or flexibility. It just moves dependency passing from _every call_ to the _composition boundary_.
+
+- **Tests** call the core function directly: `fn(args, deps)`
+- **App code** uses a wired function: `fnWithDeps(deps)(args)`
+- **Injection** still happens via `deps` — you're simply injecting once instead of repeatedly.
+
+```typescript
+// core stays pure-ish and easy to test
+await notify({ name: 'Alice' }, { notify: mockNotify });
+
+// app wiring stays ergonomic
+const notifySlack = notifyViaSlack(slackDeps);
+await notifySlack({ name: 'Alice' });
+```
+
+### Why keep the core uncurried?
+
+You can write everything curried, but keeping the implementation in the explicit form (`fn(args, deps)`) tends to produce:
+
+- **clearer stack traces**
+- **fewer accidental closures in hot paths**
+- **a consistent signature for wrappers** (retry/log/trace/etc.)
+
+So: implement in the explicit form, then use partial application at the boundary to derive ergonomic call shapes. This is a language-level technique, not a framework pattern.
+
+### Optional: a tiny helper (keeps examples tight)
+
+> Use sparingly, mainly at composition boundaries.
+
+```typescript
+export const bindDeps =
+  <Args, Deps, Out>(fn: (args: Args, deps: Deps) => Out) =>
+  (deps: Deps) =>
+  (args: Args) =>
+    fn(args, deps);
+
+// usage
+const notifyViaSlack = bindDeps(notify)(slackDeps);
+```
+
+This helper is just a partial application utility. It reinforces that the underlying pattern stays `fn(args, deps)` — we're just binding `deps` once at the boundary.
 
 ---
 
@@ -200,6 +302,10 @@ For **observability context** (trace/span IDs, correlation IDs, baggage, span at
 
 ```ts
 // domain/create-user.ts -pure business logic
+// Args and Deps defined explicitly (contract-first)
+export type CreateUserArgs = { name: string; email: string };
+export type CreateUserDeps = { db: Database };
+
 export async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
   const user = await deps.db.users.insert(args);
   return user;
@@ -207,11 +313,18 @@ export async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
 
 // app/create-user.traced.ts -observability layer
 import { trace } from 'autotel';
-import { createUser } from '../domain/create-user';
+import {
+  createUser,
+  type CreateUserArgs,
+  type CreateUserDeps,
+} from '../domain/create-user';
 
-export const createUserTraced = trace('user.create', async (args: CreateUserArgs, deps: CreateUserDeps) => {
-  return createUser(args, deps);
-});
+export const createUserTraced = trace(
+  'user.create',
+  async (args: CreateUserArgs, deps: CreateUserDeps) => {
+    return createUser(args, deps);
+  },
+);
 ```
 
 If you need direct access to trace context (attributes, baggage, etc.), use the factory form:
@@ -220,10 +333,15 @@ If you need direct access to trace context (attributes, baggage, etc.), use the 
 import { trace } from 'autotel';
 import { createUser } from '../domain/create-user';
 
-export const createUserTraced = trace((ctx) => async (args: CreateUserArgs, deps: CreateUserDeps) => {
-  ctx.setAttribute('user.plan', args.plan);
-  return createUser(args, deps);
-});
+export const createUserTraced = trace(
+  (ctx) => async (args: CreateUserArgs, deps: CreateUserDeps) => {
+    ctx.setAttribute(
+      'user.email_domain',
+      args.email.split('@')[1] ?? 'unknown',
+    );
+    return createUser(args, deps);
+  },
+);
 ```
 
 This keeps the core message clean:
@@ -260,7 +378,7 @@ const app = createApp({ userService });
 app.listen(3000);
 ```
 
-The Composition Root is the *only* place that knows about all dependencies. Your handlers, routes, and business functions don't know how deps were created. They just receive them.
+The Composition Root is the _only_ place that knows about all dependencies. Your handlers, routes, and business functions don't know how deps were created. They just receive them.
 
 ```mermaid
 graph TD
@@ -269,13 +387,13 @@ graph TD
     B -->|creates| C
     C -->|calls| D[Core Functions]
     D -->|uses deps| E[Infrastructure]
-    
+
     style A fill:#475569,stroke:#0f172a,stroke-width:2px,color:#fff
     style B fill:#64748b,stroke:#0f172a,stroke-width:2px,color:#fff
     style C fill:#94a3b8,stroke:#0f172a,stroke-width:2px,color:#0f172a
     style D fill:#cbd5e1,stroke:#0f172a,stroke-width:2px,color:#0f172a
     style E fill:#e2e8f0,stroke:#0f172a,stroke-width:2px,color:#0f172a
-    
+
     linkStyle 0 stroke:#0f172a,stroke-width:3px
     linkStyle 1 stroke:#0f172a,stroke-width:3px
     linkStyle 2 stroke:#0f172a,stroke-width:3px
@@ -296,8 +414,8 @@ class UserService {
   constructor(
     private db: Database,
     private logger: Logger,
-    private mailer: Mailer,     // only createUser needs this
-    private cache: Cache,        // only someOtherMethod needs this
+    private mailer: Mailer, // only createUser needs this
+    private cache: Cache, // only someOtherMethod needs this
   ) {}
 }
 ```
@@ -340,13 +458,17 @@ In a class, any method can call any other method via `this`:
 class UserService {
   async createUser(name: string, email: string) {
     const user = await this.db.save({ name, email });
-    await this.sendWelcomeEmail(user);       // hidden dependency
+    await this.sendWelcomeEmail(user); // hidden dependency
     await this.updateMetrics('user_created'); // hidden dependency
     return user;
   }
 
-  private sendWelcomeEmail(user: User) { /* ... */ }
-  private updateMetrics(event: string) { /* ... */ }
+  private sendWelcomeEmail(user: User) {
+    /* ... */
+  }
+  private updateMetrics(event: string) {
+    /* ... */
+  }
 }
 ```
 
@@ -355,16 +477,15 @@ You're reviewing a PR that changes `sendWelcomeEmail` to require an API key. The
 With functions, collaborators must be explicit:
 
 ```typescript
+// Args and Deps defined explicitly (contract-first)
+type CreateUserArgs = { name: string; email: string };
 type CreateUserDeps = {
   db: Database;
   sendWelcomeEmail: SendWelcomeEmail;
   updateMetrics: UpdateMetrics;
 };
 
-async function createUser(
-  args: { name: string; email: string },
-  deps: CreateUserDeps
-) {
+async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
   const user = await deps.db.save(args);
   await deps.sendWelcomeEmail({ user });
   await deps.updateMetrics({ event: 'user_created' });
@@ -411,27 +532,32 @@ Use this when most consumers only need a subset (1–2 functions), or when you w
 
 ```ts
 // user-functions.ts
-export async function getUser(args: { userId: string }, deps: GetUserDeps) {
+// Args and Deps defined explicitly (contract-first)
+export type GetUserArgs = { userId: string };
+export type GetUserDeps = { db: Database; logger: Logger };
+
+export type CreateUserArgs = { name: string; email: string };
+export type CreateUserDeps = { db: Database; logger: Logger; mailer: Mailer };
+
+export async function getUser(args: GetUserArgs, deps: GetUserDeps) {
   // ...
 }
 
-export async function createUser(
-  args: { name: string; email: string },
-  deps: CreateUserDeps
-) {
+export async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
   // ...
 }
 
-// Function types (single source of truth: the function itself)
+// Args and Deps defined explicitly (contract-first) - see Type Exports section
+// export type GetUserArgs = { userId: string };
+// export type CreateUserArgs = { name: string; email: string };
+
+// Function types (for injection)
 export type GetUserFn = typeof getUser;
 export type CreateUserFn = typeof createUser;
 
-// Explicit output/input types (no stringy indexing)
-export type GetUserResult = Awaited<ReturnType<GetUserFn>>;
-export type CreateUserResult = Awaited<ReturnType<CreateUserFn>>;
-
-export type GetUserArgs = Parameters<GetUserFn>[0];
-export type CreateUserArgs = Parameters<CreateUserFn>[0];
+// Return types - usually derived for internal helpers (XReturn naming)
+export type GetUserReturn = Awaited<ReturnType<GetUserFn>>;
+export type CreateUserReturn = Awaited<ReturnType<CreateUserFn>>;
 
 // notification-handler.ts -only needs sendWelcomeEmail
 export type NotificationHandlerDeps = {
@@ -467,10 +593,6 @@ export const userFns = {
 
 export type UserFns = typeof userFns;
 
-// Quote-free type exports (no bracket string access required)
-export type GetUserFn = typeof userFns.getUser;
-export type GetUserResult = Awaited<ReturnType<GetUserFn>>;
-
 // user-router.ts -needs most user functions
 export type UserRouterDeps = {
   userFns: UserFns; // simplest
@@ -496,26 +618,221 @@ Group only when the functions are a cohesive unit and genuinely travel together 
 
 ---
 
+## Type Exports: Contract-First Inputs, Intentional Outputs
+
+**Args and Deps are always part of the contract. Define them explicitly. Return types are also part of the contract—so choose whether they should be derived or fixed.**
+
+### The Principle
+
+- **Args and Deps** = the contract that callers depend on → **define explicitly first**
+- **Return types** = also part of the contract, but the **stability boundary** matters
+
+The function conforms to Args/Deps, not the other way around. For return types, the choice depends on context:
+
+- **For internal helpers**, deriving the return type keeps it in sync and avoids drift. Use `XReturn` naming.
+- **For boundary functions** (module/public APIs), define the return type explicitly to prevent accidental contract changes and data leakage. Use `XResult` naming.
+
+> Throughout this guide, we use `XReturn` for derived internal return types and `XResult` for explicit boundary contracts.
+
+### ✅ Internal helper (derive the return type)
+
+```ts
+export type GetUserArgs = { userId: string };
+export type GetUserDeps = { db: Database; logger: Logger };
+
+export async function getUser(args: GetUserArgs, deps: GetUserDeps) {
+  deps.logger.info(args.userId);
+  return deps.db.findUser(args.userId);
+}
+
+// Internal convenience - derived from implementation (XReturn naming)
+export type GetUserReturn = Awaited<ReturnType<typeof getUser>>;
+```
+
+### ❌ The leak problem (why explicit return types matter at boundaries)
+
+```ts
+// If you always derive, it's easy to accidentally leak persistence/infra shapes
+export async function getUserLeaky(args: GetUserArgs, deps: GetUserDeps) {
+  return deps.db.users.findById(args.userId); // returns DbUserRow, not User
+}
+
+// Accidental widening of the public contract — DbUserRow leaked!
+export type GetUserLeakyReturn = Awaited<ReturnType<typeof getUserLeaky>>;
+```
+
+### ✅ The fix: map infra → domain
+
+```ts
+// Explicit boundary contract (XResult naming)
+export type GetUserResult = User | null;
+
+// Map infra row to domain type (keeps DB shape out of contract)
+const toUser = (row: DbUserRow): User => ({
+  id: row.id,
+  name: row.name,
+  email: row.email,
+});
+
+export async function getUser(
+  args: GetUserArgs,
+  deps: GetUserDeps,
+): Promise<GetUserResult> {
+  const row = await deps.db.users.findById(args.userId);
+  return row ? toUser(row) : null;
+}
+```
+
+### ✅ Boundary/public function (explicit return type)
+
+```ts
+export type SendWelcomeEmailArgs = { recipient: User; sender: User };
+export type SendWelcomeEmailDeps = { mailer: Mailer };
+
+// Stable contract exposed to callers (XResult naming)
+export type SendWelcomeEmailResult = { messageId: string; sentAt: string };
+
+export async function sendWelcomeEmail(
+  args: SendWelcomeEmailArgs,
+  deps: SendWelcomeEmailDeps,
+): Promise<SendWelcomeEmailResult> {
+  const { recipient, sender } = args;
+  const { mailer } = deps;
+
+  const result = await mailer.send({
+    to: recipient.email,
+    from: sender.email,
+    template: 'welcome',
+  });
+
+  // Map to contract type, not the full mailer response
+  return { messageId: result.id, sentAt: new Date().toISOString() };
+}
+```
+
+### When to define return types explicitly vs derive them
+
+> **Rule of thumb:** If other modules depend on this function as an API, define the return type explicitly. If it's an internal helper, derive it.
+
+Explicit return types are valuable when:
+
+- The output is a **domain contract** (e.g., public service output)
+- You need a **stability boundary** (callers depend on it heavily)
+- You want to **prevent accidental leakage** (e.g., returning DB row shape by accident)
+
+If you always derive, a refactor can silently change the return type and cascade across your codebase—or worse, callers accept the widened type and you lose guarantees.
+
+### ❌ Disallowed: Deriving Args/Deps from Function
+
+```ts
+// ❌ BAD: Args derived from function - inverts the contract
+export async function getUser(
+  args: { userId: string },
+  deps: { db: Database; logger: Logger },
+) {
+  // ...
+}
+
+export type GetUserArgs = Parameters<typeof getUser>[0]; // ❌ Wrong direction
+export type GetUserDeps = Parameters<typeof getUser>[1]; // ❌ Wrong direction
+```
+
+Why this is bad:
+
+- Args and Deps are your API contract - they should be stable and explicit
+- Callers depend on these types - changing function parameters silently changes the contract
+- Contract-first makes the interface intentional, not accidental
+
+### For Functions Returning `Result<T, E>` (awaitly)
+
+```ts
+import { type AsyncResult, type ErrorOf } from 'awaitly';
+
+// ✅ Args and Deps: Define explicitly (contract-first)
+export type GetUserArgs = { userId: string };
+export type GetUserDeps = { db: Database; logger: Logger };
+
+export async function getUser(
+  args: GetUserArgs,
+  deps: GetUserDeps,
+): AsyncResult<User, UserNotFound | DbError> {
+  // implementation
+}
+
+// ✅ Return types: Derive from function (for internal helpers, XReturn naming)
+export type GetUserReturn = Awaited<ReturnType<typeof getUser>>;
+// Result<User, UserNotFound | DbError>
+
+// ✅ Extract success type when needed
+export type GetUserValue = GetUserReturn extends { ok: true; value: infer V }
+  ? V
+  : never;
+// User
+
+// ✅ Extract error type using awaitly utilities
+export type GetUserError = ErrorOf<typeof getUser>;
+// UserNotFound | DbError
+```
+
+### Pattern Summary
+
+For every function following `fn(args, deps)`:
+
+```ts
+// 1. Define Args and Deps explicitly (contract-first)
+export type GetUserArgs = { userId: string };
+export type GetUserDeps = { db: Database; logger: Logger };
+
+// 2. Define the function conforming to the contract
+export async function getUser(
+  args: GetUserArgs,
+  deps: GetUserDeps,
+): AsyncResult<User, UserNotFound | DbError> {
+  // implementation
+}
+
+// 3. Return types: derive for internal (XReturn), explicit for boundaries (XResult)
+// For internal helpers:
+export type GetUserReturn = Awaited<ReturnType<typeof getUser>>;
+// For Result types, extract success/error:
+export type GetUserError = ErrorOf<typeof getUser>;
+export type GetUserValue = GetUserReturn extends { ok: true; value: infer V }
+  ? V
+  : never;
+```
+
+**Rules:**
+
+- **Args and Deps**: Always define explicitly before the function (contract-first)
+- **Return types**: Derive for internal helpers, define explicitly for boundary/public APIs
+
+🚫 **Never** derive `Args` or `Deps` using `Parameters<typeof fn>` - define them explicitly as the contract.
+
+---
+
 ## The Rules
 
 1. **Per-function deps.** Avoid god objects. Each function declares exactly what it needs. Group related functions only when they're cohesive and always used together.
 
-2. **Inject what you want to mock.** infrastructure (db, logger) and collaborators. Import pure utilities you'll never mock (think `lodash`, `slugify`, math helpers -only inject things that hit network, disk, or the clock).
+2. **Contract-first for inputs, intentional for outputs.** Define `Args` and `Deps` types explicitly before the function (they are the contract). For return types, derive for internal helpers using `Awaited<ReturnType<typeof fn>>`, but define explicitly for boundary/public APIs to prevent accidental contract changes. Never use `Parameters<typeof fn>` for Args/Deps.
+
+3. **Inject what you want to mock.** infrastructure (db, logger) and collaborators. Import pure utilities you'll never mock (think `lodash`, `slugify`, math helpers -only inject things that hit network, disk, or the clock).
 
    Don't inject pure functions:
+
    ```typescript
    // ❌ Over-injecting
-   function createUser(args, deps: { db, logger, slugify, randomUUID }) { }
-   
+   function createUser(args, deps: { db; logger; slugify; randomUUID }) {}
+
    // ✅ Only inject what you'll mock
    import { slugify } from 'slugify';
    import { randomUUID } from 'crypto';
-   function createUser(args, deps: { db, logger }) { }
+   function createUser(args, deps: { db; logger }) {}
    ```
 
-3. **Trust validated input.** Core functions don't re-validate args. That's the boundary's job. See [Validation at the Boundary](./validation).
+4. **Trust validated input.** Core functions don't re-validate args. That's the boundary's job. See [Validation at the Boundary](./validation).
 
-4. **Factory at the boundary.** Wire deps once, expose clean API.
+5. **Factory at the boundary.** Wire deps once, expose clean API.
 
 The pattern: `fn(args, deps)`
 
@@ -523,14 +840,18 @@ The pattern: `fn(args, deps)`
 graph TD
     A[Handlers / Routes<br/>userService.getUser] --> B[Factory boundary<br/>createUserService]
     B --> C[Core Functions<br/>getUser, createUser]
-    
+
     style A fill:#475569,stroke:#0f172a,stroke-width:2px,color:#fff
     style B fill:#64748b,stroke:#0f172a,stroke-width:2px,color:#fff
     style C fill:#94a3b8,stroke:#0f172a,stroke-width:2px,color:#0f172a
-    
+
     linkStyle 0 stroke:#0f172a,stroke-width:3px
     linkStyle 1 stroke:#0f172a,stroke-width:3px
 ```
+
+> **Frameworks**
+>
+> This works anywhere: keep framework code as **thin wiring** and delegate real logic to `fn(args, deps)` functions.
 
 ---
 
@@ -564,7 +885,7 @@ import { cache as defaultCache, KeyvCache } from '../cache'; // ❌ BAD
 All business logic functions must follow this signature:
 
 ```typescript
-fn(args, deps)
+fn(args, deps);
 ```
 
 - **args** → varies per call (input data)
@@ -620,7 +941,7 @@ const defaultDeps: SendWelcomeEmailDeps = { mailer: _mailer };
 export async function sendWelcomeEmail(
   recipient: User,
   sender: User,
-  deps: SendWelcomeEmailDeps = defaultDeps
+  deps: SendWelcomeEmailDeps = defaultDeps,
 ) {
   const { mailer } = deps;
 
@@ -652,7 +973,7 @@ export type SendWelcomeEmailDeps = { mailer: Mailer };
 export async function sendWelcomeEmail(
   recipient: User,
   sender: User,
-  deps: SendWelcomeEmailDeps
+  deps: SendWelcomeEmailDeps,
 ) {
   const { mailer } = deps;
 
@@ -668,7 +989,7 @@ export async function sendWelcomeEmail(
 ✅ Explicit dependencies  
 ✅ No runtime imports from infrastructure
 
-**When to stop here:** If you have many call sites and want to minimize changes, Phase 2 is sufficient. 
+**When to stop here:** If you have many call sites and want to minimize changes, Phase 2 is sufficient.
 
 #### PHASE 3 (Optional but Recommended): Use Object Parameters
 
@@ -684,7 +1005,7 @@ export type SendWelcomeEmailDeps = { mailer: Mailer };
 
 export async function sendWelcomeEmail(
   args: SendWelcomeEmailArgs,
-  deps: SendWelcomeEmailDeps
+  deps: SendWelcomeEmailDeps,
 ) {
   const { recipient, sender } = args;
   const { mailer } = deps;
@@ -717,19 +1038,19 @@ Enable `verbatimModuleSyntax` in `tsconfig.json` to prevent accidental runtime i
 
 Add a rule to ESLint to prevent imports from infrastructure.
 
-
 **ESM (eslint.config.mjs):**
+
 ```javascript
 export default {
   rules: {
-    "no-restricted-imports": [
-      "error",
+    'no-restricted-imports': [
+      'error',
       {
         patterns: [
           {
-            group: ["**/infra/**"],
+            group: ['**/infra/**'],
             message:
-              "Domain code must not import from infra. Inject dependencies instead.",
+              'Domain code must not import from infra. Inject dependencies instead.',
           },
         ],
       },
@@ -766,92 +1087,17 @@ Now this gets flagged:
 
 ```typescript
 // ESLint error: prefer object params
-function createUser(name: string, email: string, age: number) { }
+function createUser(name: string, email: string, age: number) {}
 ```
 
 And this passes:
 
 ```typescript
 // Object params
-function createUser(args: { name: string; email: string; age: number }) { }
+function createUser(args: { name: string; email: string; age: number }) {}
 ```
 
 The rule is pragmatic. It ignores single-parameter functions, constructors, and test files by default. It catches the cases where positional params hurt readability: when there are multiple arguments and order starts to matter.
-
----
-
-## Integrating with Frameworks
-
-### The NestJS Case
-
-Many developers use decorator-heavy frameworks like NestJS. You don't have to abandon the `fn(args, deps)` pattern -use NestJS classes as **thin wrappers**:
-
-```typescript
-import { type Result } from 'awaitly';
-
-// Pure function - your actual logic
-async function createUser(
-  args: CreateUserInput,
-  deps: { db: Database; logger: Logger }
-): Promise<Result<User, 'EMAIL_EXISTS' | 'DB_ERROR'>> {
-  // Business logic here
-}
-
-// NestJS wrapper - thin delegation layer
-@Injectable()
-export class UserService {
-  constructor(
-    private db: Database,
-    private logger: Logger,
-  ) {}
-
-  async createUser(args: CreateUserInput) {
-    // Delegate to pure function
-    return createUser(args, {
-      db: this.db,
-      logger: this.logger,
-    });
-  }
-}
-```
-
-The NestJS class:
-- Receives dependencies via constructor injection (NestJS handles this)
-- Delegates immediately to the pure function
-- Contains no business logic itself
-
-Your pure function:
-- Remains fully testable without NestJS
-- Has explicit dependencies (no decorators needed)
-- Can be used outside NestJS if you migrate later
-
-**The principle:** Framework classes are infrastructure. Keep them thin. Business logic lives in pure functions.
-
-### Enterprise-Scale DI
-
-For very large applications with hundreds of services, manually wiring dependencies in a Composition Root can become tedious. The `fn(args, deps)` pattern is compatible with auto-wiring DI containers:
-
-```typescript
-// tsyringe example
-import { container, injectable, inject } from 'tsyringe';
-
-@injectable()
-class UserServiceImpl {
-  constructor(
-    @inject('Database') private db: Database,
-    @inject('Logger') private logger: Logger,
-  ) {}
-
-  createUser(args: CreateUserInput) {
-    return createUser(args, { db: this.db, logger: this.logger });
-  }
-}
-
-// Auto-wired, but pure functions underneath
-const userService = container.resolve(UserServiceImpl);
-```
-
-The pattern works with tsyringe, InversifyJS, or any DI container. The key is that your *core functions* remain pure and decorator-free -only the wiring layer uses framework-specific features.
 
 ---
 
@@ -859,17 +1105,9 @@ The pattern works with tsyringe, InversifyJS, or any DI container. The key is th
 
 Critics sometimes worry that creating many small objects (`args` objects, `deps` bags, factory functions) increases garbage collection pressure.
 
-**The reality:** Modern V8 engines (Orinoco) use generational garbage collection. Objects that die young -like the temporary objects created during request handling -are reclaimed almost instantly. V8 is *extremely* efficient at this.
+**The reality:** Modern JS engines use generational garbage collection. Short-lived objects—like the temporary objects created during request handling—are collected in the young generation, which is optimized for exactly this pattern.
 
-For I/O-bound web applications:
-
-| Operation | Typical Latency |
-|-----------|-----------------|
-| Database query | 1-50ms |
-| HTTP request | 10-500ms |
-| Object allocation | 0.0001ms |
-
-The database query is 10,000-500,000x slower than object allocation. The architectural clarity and type safety of the `fn(args, deps)` pattern far outweigh any micro-overhead.
+For I/O-bound web applications, object allocation is orders of magnitude faster than any database query or HTTP request. The architectural clarity and type safety of the `fn(args, deps)` pattern far outweigh any micro-overhead.
 
 **When to worry about allocation:**
 
@@ -879,6 +1117,8 @@ The database query is 10,000-500,000x slower than object allocation. The archite
 
 For typical web services, **don't optimize for GC**. Optimize for correctness, testability, and maintainability.
 
+> Once you see `fn(args, deps)` as “logic + environment”, everything else, testing, composition, wiring, frameworks—falls out naturally.
+
 ---
 
 ## What's Next
@@ -887,7 +1127,7 @@ Alright, so we have clean functions with explicit deps. But there's something we
 
 When someone calls `getUser({ userId: '123' }, deps)`... how do we know `userId` is actually valid? What if it's an empty string? What if `createUser` receives an email that's not actually an email?
 
-Our functions have clean signatures, but right now they're *trusting* that the data they receive is correct. And in a web application, data comes from the outside world. It comes from HTTP requests, queue messages, CLI arguments. It comes from users who might type anything.
+Our functions have clean signatures, but right now they're _trusting_ that the data they receive is correct. And in a web application, data comes from the outside world. It comes from HTTP requests, queue messages, CLI arguments. It comes from users who might type anything.
 
 Where does validation fit into `fn(args, deps)`?
 
@@ -895,5 +1135,4 @@ That's what we'll figure out next.
 
 ---
 
-*Next: [Validation at the Boundary](./validation). Where Zod and schema validation fit into this world.*
-
+_Next: [Validation at the Boundary](./validation). Where Zod and schema validation fit into this world._

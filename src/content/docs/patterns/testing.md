@@ -118,28 +118,92 @@ const mockDb = {
 
 That cast (`as Mock<...>`) is a type escape hatch. You're telling TypeScript "trust me." If `Database` changes its interface, the cast still passes. You won't get type errors in tests until runtime.
 
-### When vi.mock Is Still Fine
+### Prefer Args for Time and Randomness
 
-To be fair, `vi.mock` has legitimate uses. It's the right tool for environment-level concerns:
+Before reaching for `vi.mock`, ask: can I pass this as an argument instead?
+
+For dates, the `fn(args, deps)` pattern often works better than mocking:
 
 ```typescript
-// Good use of vi.mock: controlling time
+// Instead of mocking Date or date-fns, pass time as an argument
+function createOrder(
+  args: {
+    customerId: string;
+    items: OrderItem[];
+    timestamp?: Date;  // defaults to now
+  },
+  deps: CreateOrderDeps
+) {
+  const createdAt = args.timestamp ?? new Date();
+  return deps.db.orders.create({
+    data: { ...args, createdAt },
+  });
+}
+```
+
+Now tests have total control without any mocking:
+
+```typescript
+it('sets createdAt to provided timestamp', async () => {
+  const fixedDate = new Date('2024-01-15T10:00:00Z');
+
+  const result = await createOrder(
+    { customerId: '123', items: [], timestamp: fixedDate },
+    deps
+  );
+
+  expect(result.createdAt).toEqual(fixedDate);
+});
+```
+
+The same pattern works for UUIDs and other "environmental" values:
+
+```typescript
+function createUser(
+  args: {
+    email: string;
+    id?: string;  // defaults to generated UUID
+  },
+  deps: CreateUserDeps
+) {
+  const id = args.id ?? crypto.randomUUID();
+  // ...
+}
+
+// Test can now assert on exact ID
+const result = await createUser(
+  { email: 'test@example.com', id: 'test-uuid-1234' },
+  deps
+);
+expect(result.id).toBe('test-uuid-1234');
+```
+
+**Why this is better than mocking:**
+- No hoisting magic or module path coupling
+- The dependency is visible in the function signature
+- Tests are simpler: just pass the value you want
+- Production code works unchanged (defaults kick in)
+
+### When vi.mock Is Still Appropriate
+
+`vi.mock` still has legitimate uses for things you truly can't inject:
+
+```typescript
+// Third-party library that calls Date internally
 vi.mock('date-fns', () => ({
-  now: () => new Date('2024-01-15'),
+  formatDistance: () => '2 days ago',
 }));
 
-// Good use of vi.mock: controlling randomness
-vi.mock('crypto', () => ({
-  randomUUID: () => 'test-uuid-1234',
-}));
-
-// Good use of vi.mock: polyfills or platform APIs
+// Platform APIs in code you don't control
 vi.mock('fs/promises');
 ```
 
-These are things you can't inject as deps. They're baked into the runtime or third-party libraries. Module mocking makes sense here.
+Use `vi.mock` when:
+- A third-party library calls `Date` or `crypto` internally
+- You can't modify the function signature (legacy code)
+- The value is truly environmental (logging timestamps, metrics)
 
-The problem is using `vi.mock` for *application logic*: your services, repositories, and business functions. That's where explicit deps win.
+The problem is using `vi.mock` for *application logic*: your services, repositories, and business functions. That's where explicit args and deps win.
 
 All of these issues stem from the same root cause: dependencies are implicit and global instead of explicit and local.
 
