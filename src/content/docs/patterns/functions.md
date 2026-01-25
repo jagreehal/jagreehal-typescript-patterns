@@ -165,7 +165,43 @@ it('returns user when found', async () => {
 
 Compare to the class version where you'd have to mock `mailer`, `cache`, and everything else the constructor demands, even though `getUser` doesn't touch them.
 
-### 3. No Hidden Coupling
+### 3. Test Files Stay Focused
+
+I prefer tests next to source files. `notify.ts` gets `notify.test.ts` for unit tests and `notify.int.test.ts` for integration tests. (See [Testing Strategy](./testing) for the full approach.)
+
+With functions, this works naturally:
+
+```
+user/
+├── get-user.ts
+├── get-user.test.ts
+├── create-user.ts
+├── create-user.test.ts
+└── create-user.int.test.ts
+```
+
+Each file is small. Each test file covers one function. Easy to navigate, easy to maintain.
+
+With classes, this pattern breaks down:
+
+```
+user/
+├── user-service.ts        # 10+ methods, growing
+└── user-service.test.ts   # One describe per method, massive file
+```
+
+That test file becomes a problem:
+
+- **Large files hurt readability.** Scrolling through 500+ lines of tests to find what you need.
+- **Maintenance burden grows.** Adding a method means finding the right spot in a sprawling file.
+- **Developer experience suffers.** Harder to reason about, harder to review PRs.
+- **AI context bloats.** LLMs have to load the entire test file to understand any part of it.
+
+And here's the key insight: **with classes, this is unbounded**. What seems manageable at 3 methods becomes painful at 10 and unworkable at 20. There's no natural stopping point. The class accumulates methods, the test file accumulates describe blocks, and both grow without limit.
+
+With functions, you hit the natural boundary: one function, one file, one test file. Growth means adding new files, not bloating existing ones.
+
+### 4. No Hidden Coupling
 
 In a class, any method can call any other method via `this`:
 
@@ -497,15 +533,17 @@ If context changes business behavior (e.g. tenant isolation or authorization), m
 
 I'm not saying "never use classes." Classes work well when:
 
-- **2-5 cohesive methods** that genuinely share state
 - **Framework requires them** (NestJS, Angular)
-- **Thin infrastructure wrapper** (Redis client, HTTP client)
+- **Thin infrastructure wrapper** (Redis client, HTTP client) for encapsulating connection state, pooling, or lifecycle
+
+Even then, keep them thin. The moment you're writing business logic inside a class, you're trading away the testing and organization benefits described above.
 
 Classes become problematic when:
 
-- **10+ methods** accumulate over time
-- **Private helpers** create implicit coupling via `this`
-- **Constructor grows** to satisfy every method's needs
+- **Business logic lives inside them.** Now you need `describe` blocks per method in one test file.
+- **Private helpers** create implicit coupling via `this`.
+- **Constructor grows** to satisfy every method's needs.
+- **Methods accumulate** with no natural stopping point.
 
 For business logic? Prefer functions.
 
