@@ -3,7 +3,7 @@ title: Typed Errors
 description: Make failure explicit with Result types instead of throwing exceptions. Composable error handling with railway-oriented programming.
 ---
 
-*Previously: [Validation at the Boundary](./validation). We learned to guard against bad input. But what about operations that fail?*
+*Previously: [Validation at the Boundary](..//validation). We learned to guard against bad input. But what about operations that fail?*
 
 ---
 
@@ -350,7 +350,7 @@ The key difference:
 
 `step.try()` catches exceptions, maps them to your error type, and converts them to Results. It's the entry point where messy throwing code enters your clean Result pipeline. The required `error` parameter makes you think about how to categorize the failure—though you'll want to be specific enough to preserve meaningful information.
 
-**Connection to TypeScript Config:** Note that `JSON.parse` returns `any` by default, which bypasses your type checking. With [@total-typescript/ts-reset](./typescript-config), it returns `unknown` instead—forcing you to validate the result (typically with Zod). This pairs well with `step.try()`: the wrapper handles exceptions, and `ts-reset` + Zod handle type safety.
+**Connection to TypeScript Config:** Note that `JSON.parse` returns `any` by default, which bypasses your type checking. With [@total-typescript/ts-reset](..//typescript-config), it returns `unknown` instead—forcing you to validate the result (typically with Zod). This pairs well with `step.try()`: the wrapper handles exceptions, and `ts-reset` + Zod handle type safety.
 
 **For Result-returning functions:** Use `step.fromResult()` to preserve typed errors:
 
@@ -674,11 +674,11 @@ function collapseToHttpError(error: DetailedError): HttpError {
 }
 ```
 
-**The principle:** Preserve detail for observability ([OpenTelemetry](./opentelemetry) records the specific `DB_TIMEOUT`), but simplify for API consumers. Your traces show exactly what failed; your API returns clean categories.
+**The principle:** Preserve detail for observability ([OpenTelemetry](..//opentelemetry) records the specific `DB_TIMEOUT`), but simplify for API consumers. Your traces show exactly what failed; your API returns clean categories.
 
 ---
 
-**What about transient failures?** Database connections dropping, HTTP timeouts, service hiccups? Those deserve their own treatment. We'll cover retry and timeout patterns in [Resilience Patterns](./resilience).
+**What about transient failures?** Database connections dropping, HTTP timeouts, service hiccups? Those deserve their own treatment. We'll cover retry and timeout patterns in [Resilience Patterns](..//resilience).
 
 ---
 
@@ -922,4 +922,4 @@ Next, we'll focus on business workflows: retries, timeouts, parallelism, compens
 
 ---
 
-*Next: [Composing Workflows](./workflows). Orchestrating multi-step operations with reliability patterns and automatic rollback.*
+*Next: [Composing Workflows](..//workflows). Orchestrating multi-step operations with reliability patterns and automatic rollback.*

@@ -3,7 +3,7 @@ title: API Design Patterns
 description: Build production-ready HTTP APIs with clean handlers, proper error mapping, health checks, and operational excellence.
 ---
 
-*Previously: [Configuration at the Boundary](./configuration). We learned to validate config at startup. Now let's build APIs that use all these patterns together.*
+*Previously: [Configuration at the Boundary](..//configuration). We learned to validate config at startup. Now let's build APIs that use all these patterns together.*
 
 ---
 
@@ -84,7 +84,7 @@ export const createUser = os
   });
 ```
 
-This is [Validation at the Boundary](./validation) in action. The handler never sees invalid data.
+This is [Validation at the Boundary](..//validation) in action. The handler never sees invalid data.
 
 ### Sanitize After Validation
 
@@ -167,7 +167,7 @@ This works well when:
 
 ### Approach 2: Result Types (Complex APIs)
 
-For complex business logic, use [Result types](./errors) internally and map at the boundary:
+For complex business logic, use [Result types](..//errors) internally and map at the boundary:
 
 ```typescript
 import { trace } from "./observability";
@@ -1197,7 +1197,7 @@ app.use((req, next) => {
 
 ## Route File Organization
 
-As APIs grow, file organization becomes critical. The patterns from [Functions Over Classes](./functions) apply here: "Group only when functions genuinely travel together (often at boundaries: routers)."
+As APIs grow, file organization becomes critical. The patterns from [Functions Over Classes](..//functions) apply here: "Group only when functions genuinely travel together (often at boundaries: routers)."
 
 ### One File Per Route
 
@@ -1727,14 +1727,14 @@ export const createOrder = os
 
 Over these patterns, we've constructed a complete TypeScript application architecture:
 
-1. **[Testing drives design](./testing)**: Testability revealed the need for explicit deps
-2. **[Functions over classes](./functions)**: `fn(args, deps)` pattern
-3. **[Validation at the boundary](./validation)**: Zod schemas, branded types
-4. **[Typed errors](./errors)**: Result types, railway-oriented programming
-5. **[Observability](./opentelemetry)**: `trace()` wrapper, structured logging
-6. **[Resilience](./resilience)**: Retry, timeout, circuit breaker at workflow level
-7. **[Configuration](./configuration)**: Validate at startup, secrets in memory
-8. **[API design](./api)**: This pattern: handlers, health checks, security
+1. **[Testing drives design](..//testing)**: Testability revealed the need for explicit deps
+2. **[Functions over classes](..//functions)**: `fn(args, deps)` pattern
+3. **[Validation at the boundary](..//validation)**: Zod schemas, branded types
+4. **[Typed errors](..//errors)**: Result types, railway-oriented programming
+5. **[Observability](..//opentelemetry)**: `trace()` wrapper, structured logging
+6. **[Resilience](..//resilience)**: Retry, timeout, circuit breaker at workflow level
+7. **[Configuration](..//configuration)**: Validate at startup, secrets in memory
+8. **[API design](..//api)**: This pattern: handlers, health checks, security
 
 Each pattern builds on the previous. They're not independent. They're a cohesive architecture.
 
@@ -1771,4 +1771,4 @@ We've built the complete application architecture. But patterns are only as good
 
 ---
 
-*Next: [Enforcing Patterns with TypeScript](./typescript-config). Compile-time enforcement.*
+*Next: [Enforcing Patterns with TypeScript](..//typescript-config). Compile-time enforcement.*

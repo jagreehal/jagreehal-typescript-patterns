@@ -3,7 +3,7 @@ title: Performance Testing
 description: Use load tests to find bottlenecks and chaos tests to verify resilience patterns work under pressure.
 ---
 
-*Previously: [Monorepo Patterns](./monorepos). We structured our packages. Now how do we prove they perform under load?*
+*Previously: [Monorepo Patterns](..//monorepos). We structured our packages. Now how do we prove they perform under load?*
 
 ---
 
@@ -25,7 +25,7 @@ Unit tests verify correctness. Integration tests verify the stack works together
 - What breaks first under load?
 - Where do we spend the most time when the system is stressed?
 
-Your OpenTelemetry traces from [post 5](./opentelemetry) are essential here. But traces from single requests show "happy path" performance. Under load, different problems emerge:
+Your OpenTelemetry traces from [post 5](..//opentelemetry) are essential here. But traces from single requests show "happy path" performance. Under load, different problems emerge:
 
 ```mermaid
 graph TD
@@ -273,7 +273,7 @@ Spike tests reveal:
 
 ## Connecting Load Tests to Traces
 
-Here's where [OpenTelemetry](./opentelemetry) becomes invaluable. Your traces show *where* time is spent under load.
+Here's where [OpenTelemetry](..//opentelemetry) becomes invaluable. Your traces show *where* time is spent under load.
 
 ### Pass Trace Context from k6
 
@@ -420,7 +420,7 @@ Once you can measure performance, you can break things intentionally. This is **
 
 ### The Idea
 
-Your [resilience patterns](./resilience) (retries, timeouts, circuit breakers) are only valuable if they work. Chaos engineering proves they do.
+Your [resilience patterns](..//resilience) (retries, timeouts, circuit breakers) are only valuable if they work. Chaos engineering proves they do.
 
 ```mermaid
 graph TD

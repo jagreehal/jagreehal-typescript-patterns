@@ -3,7 +3,7 @@ title: Enforcing Patterns with ESLint
 description: Use ESLint rules to enforce architectural boundaries, function signatures, and import patterns at lint time.
 ---
 
-*Previously: [Enforcing Patterns with TypeScript](./typescript-config). TypeScript catches type errors. But patterns need more enforcement.*
+*Previously: [Enforcing Patterns with TypeScript](..//typescript-config). TypeScript catches type errors. But patterns need more enforcement.*
 
 ---
 
@@ -476,5 +476,5 @@ But what about multiple packages? How do you structure a monorepo for debuggabil
 
 ---
 
-*Next: [Monorepo Patterns](./monorepos). Structure packages for debugging, sharing, and tree-shaking.*
+*Next: [Monorepo Patterns](..//monorepos). Structure packages for debugging, sharing, and tree-shaking.*
 

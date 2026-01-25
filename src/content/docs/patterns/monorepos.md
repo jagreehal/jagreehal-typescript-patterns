@@ -3,7 +3,7 @@ title: Monorepo Patterns
 description: Structure TypeScript monorepos for debuggability, shared configuration, and granular package exports without premature abstraction.
 ---
 
-*Previously: [Enforcing Patterns with ESLint](./eslint). ESLint enforces patterns within a package. But how do you enforce them across multiple packages?*
+*Previously: [Enforcing Patterns with ESLint](..//eslint). ESLint enforces patterns within a package. But how do you enforce them across multiple packages?*
 
 ---
 
@@ -311,13 +311,13 @@ export default [
 ];
 ```
 
-The pattern: **import → spread → extend**. See [Enforcing Patterns with ESLint](./eslint) for complete configs.
+The pattern: **import → spread → extend**. See [Enforcing Patterns with ESLint](..//eslint) for complete configs.
 
 ---
 
 ## Package Extraction: When to Share
 
-The same principle from [Composition Patterns](./composition) applies to packages: **don't extract until you have three proven uses and a stable interface.**
+The same principle from [Composition Patterns](..//composition) applies to packages: **don't extract until you have three proven uses and a stable interface.**
 
 Premature shared packages create coordination overhead versioning, ownership ambiguity, and deprecation debt. Duplication is the price of agility.
 
@@ -434,7 +434,7 @@ I'm not saying "never use index.ts". Barrel files work when:
 
 Barrel files become problematic when they sit at package boundaries and re-export *everything*. A single `index.ts` that exports 40 functions from 15 modules is the anti-pattern. A focused re-export of related utilities is fine.
 
-> **Enforcement**: The ESLint config shown earlier bans `export *` with `no-restricted-syntax`. See [Enforcing Patterns with ESLint](./eslint) for variations.
+> **Enforcement**: The ESLint config shown earlier bans `export *` with `no-restricted-syntax`. See [Enforcing Patterns with ESLint](..//eslint) for variations.
 
 ---
 
@@ -513,4 +513,4 @@ We've established patterns for structuring code across packages: debugging, conf
 
 ---
 
-*Next: [Performance Testing](./performance). Prove it works under pressure.*
+*Next: [Performance Testing](..//performance). Prove it works under pressure.*

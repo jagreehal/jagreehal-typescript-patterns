@@ -3,7 +3,7 @@ title: Functions Over Classes
 description: Learn the fn(args, deps) pattern for explicit dependency injection, making your code testable and composable.
 ---
 
-_Previously: [Why This Pattern Exists](./testing). We saw how testability drives design. Now let's see the pattern itself._
+_Previously: [Why This Pattern Exists](../testing). We saw how testability drives design. Now let's see the pattern itself._
 
 I want to talk about dependency injection.
 
@@ -167,7 +167,7 @@ Compare to the class version where you'd have to mock `mailer`, `cache`, and eve
 
 ### 3. Test Files Stay Focused
 
-I prefer tests next to source files. `notify.ts` gets `notify.test.ts` for unit tests and `notify.int.test.ts` for integration tests. (See [Testing Strategy](./testing) for the full approach.)
+I prefer tests next to source files. `notify.ts` gets `notify.test.ts` for unit tests and `notify.int.test.ts` for integration tests. (See [Testing Strategy](../testing) for the full approach.)
 
 With functions, this works naturally:
 
@@ -523,7 +523,7 @@ This keeps the core message clean:
 - **Dependency injection** (`fn(args, deps)`) is for correctness and testability
 - **Observability** is layered on, not baked in
 
-→ See [OpenTelemetry patterns](./opentelemetry) for the complete tracing approach.
+→ See [OpenTelemetry patterns](../opentelemetry) for the complete tracing approach.
 
 If context changes business behavior (e.g. tenant isolation or authorization), model it explicitly in `args` or as request-scoped `deps` -not as "extra data."
 
@@ -569,7 +569,7 @@ For business logic? Prefer functions.
    function createUser(args, deps: { db; logger }) {}
    ```
 
-4. **Trust validated input.** Core functions don't re-validate args. That's the boundary's job. See [Validation at the Boundary](./validation).
+4. **Trust validated input.** Core functions don't re-validate args. That's the boundary's job. See [Validation at the Boundary](../validation).
 
 5. **Factory at the boundary.** Wire deps once, expose clean API.
 
@@ -1175,4 +1175,4 @@ That's what we'll figure out next.
 
 ---
 
-_Next: [Validation at the Boundary](./validation). Where Zod and schema validation fit into this world._
+_Next: [Validation at the Boundary](../validation). Where Zod and schema validation fit into this world._

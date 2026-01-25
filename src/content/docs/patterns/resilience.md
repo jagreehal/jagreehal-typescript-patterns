@@ -3,7 +3,7 @@ title: Resilience Patterns
 description: Add retries, timeouts, and circuit breakers to handle transient failures without cluttering your business logic.
 ---
 
-*Previously: [Functions + OpenTelemetry](./opentelemetry). We made our functions observable. Now we can see what fails. But some failures are temporary.*
+*Previously: [Functions + OpenTelemetry](..//opentelemetry). We made our functions observable. Now we can see what fails. But some failures are temporary.*
 
 ---
 
@@ -169,7 +169,7 @@ graph TD
 
 **Solution:** Retry at ONE level only: the workflow level. Business functions and infrastructure clients should not retry internally.
 
-> **Note:** This includes composition-level `withRetry` wrappers (see [Wrapping](./composition#wrapping-add-behavior-without-modifying)). If you use `step.retry()` in workflows, don't also wrap channels with `withRetry`. Pick one layer for retry policy.
+> **Note:** This includes composition-level `withRetry` wrappers (see [Wrapping](..//composition#wrapping-add-behavior-without-modifying)). If you use `step.retry()` in workflows, don't also wrap channels with `withRetry`. Pick one layer for retry policy.
 
 ---
 
@@ -533,5 +533,5 @@ Environment variables are strings. They might be missing. They might be invalid.
 
 ---
 
-*Next: [Configuration at the Boundary](./configuration). Validate environment variables at startup.*
+*Next: [Configuration at the Boundary](..//configuration). Validate environment variables at startup.*
 

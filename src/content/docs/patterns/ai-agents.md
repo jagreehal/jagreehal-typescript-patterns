@@ -3,7 +3,7 @@ title: Writing Specs for AI Coding Agents
 description: Design effective prompts and specifications that leverage AI agent capabilities while maintaining human oversight and code quality.
 ---
 
-*Bonus topic. Return to: [What We've Built](./conclusion) or explore [React Architecture](./react).*
+*Bonus topic. Return to: [What We've Built](..//conclusion) or explore [React Architecture](..//react).*
 
 ---
 
@@ -741,6 +741,6 @@ A good spec doesn't just tell the AI what to build. It teaches the AI how your t
 
 ---
 
-*This is a bonus topic. Return to: [What We've Built](./conclusion)*
+*This is a bonus topic. Return to: [What We've Built](..//conclusion)*
 
-*Or explore: [React Architecture](./react) for framework-specific patterns.*
+*Or explore: [React Architecture](..//react) for framework-specific patterns.*

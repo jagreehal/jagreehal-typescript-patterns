@@ -3,7 +3,7 @@ title: Functions + OpenTelemetry
 description: Add observability to your functions without cluttering business logic. Distributed tracing with the trace() wrapper pattern.
 ---
 
-*Previously: [Composition Patterns](./composition). We learned how small pieces combine into extensible systems. But when things fail in production, how do we know what happened?*
+*Previously: [Composition Patterns](..//composition). We learned how small pieces combine into extensible systems. But when things fail in production, how do we know what happened?*
 
 ---
 
@@ -882,4 +882,4 @@ That's what we'll figure out next.
 
 ---
 
-*Next: [Resilience Patterns](./resilience). Retries, circuit breakers, and timeouts.*
+*Next: [Resilience Patterns](..//resilience). Retries, circuit breakers, and timeouts.*

@@ -3,7 +3,7 @@ title: Enforcing Patterns with TypeScript
 description: Use strict TypeScript compiler flags to enforce patterns at compile time. Beyond strict mode with noUncheckedIndexedAccess.
 ---
 
-*Previously: [API Design Patterns](./api). We've built the complete application architecture. Now let's enforce it.*
+*Previously: [API Design Patterns](..//api). We've built the complete application architecture. Now let's enforce it.*
 
 ---
 
@@ -115,7 +115,7 @@ This is especially important in large codebases where files get reorganized, or 
 
 ## Fixing Standard Library Leaks
 
-Here's a harsh truth: `strict: true` is insufficient. TypeScript's standard library still leaks `any` through `JSON.parse`, `fetch`, and other I/O functions. This silently bypasses your [Validation at the Boundary](./validation) pattern.
+Here's a harsh truth: `strict: true` is insufficient. TypeScript's standard library still leaks `any` through `JSON.parse`, `fetch`, and other I/O functions. This silently bypasses your [Validation at the Boundary](..//validation) pattern.
 
 ```typescript
 // The problem: JSON.parse returns any
@@ -154,7 +154,7 @@ const data = JSON.parse(input);
 const user = UserSchema.parse(data);  // Now it's typed
 ```
 
-**This is the key insight:** By forcing `JSON.parse` to return `unknown`, `ts-reset` makes your [Validation at the Boundary](./validation) pattern not just a best practice, but a **compiler requirement**. You literally cannot use parsed data without validating it first. The Zod boundary becomes inescapable.
+**This is the key insight:** By forcing `JSON.parse` to return `unknown`, `ts-reset` makes your [Validation at the Boundary](..//validation) pattern not just a best practice, but a **compiler requirement**. You literally cannot use parsed data without validating it first. The Zod boundary becomes inescapable.
 
 It also fixes other annoyances:
 
@@ -219,7 +219,7 @@ function isRole(value: string): value is Role {
 
 ## Enforcing Type-Only Imports
 
-This is the compiler flag that enforces the `fn(args, deps)` pattern from [Functions Over Classes](./functions).
+This is the compiler flag that enforces the `fn(args, deps)` pattern from [Functions Over Classes](..//functions).
 
 The pattern says: infrastructure should only be imported as *types*, never at runtime. Your functions receive infrastructure through `deps`, not through imports.
 
@@ -402,5 +402,5 @@ That's where ESLint comes in.
 
 ---
 
-*Next: [Enforcing Patterns with ESLint](./eslint). Rules that catch violations TypeScript can't.*
+*Next: [Enforcing Patterns with ESLint](..//eslint). Rules that catch violations TypeScript can't.*
 

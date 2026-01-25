@@ -3,7 +3,7 @@ title: Configuration at the Boundary
 description: Validate and type configuration at startup. Handle secrets securely with secret managers.
 ---
 
-*Previously: [Resilience Patterns](./resilience). We've built a complete architecture. But there's one more boundary to handle: how your application starts.*
+*Previously: [Resilience Patterns](..//resilience). We've built a complete architecture. But there's one more boundary to handle: how your application starts.*
 
 ---
 
@@ -122,7 +122,7 @@ graph TD
     linkStyle 1 stroke:#0f172a,stroke-width:3px
 ```
 
-Validated config flows through your [Composition Root](./functions#where-does-this-live), where it becomes part of `deps`:
+Validated config flows through your [Composition Root](..//functions#where-does-this-live), where it becomes part of `deps`:
 
 ```typescript
 // main.ts (Composition Root)
@@ -525,5 +525,5 @@ Now let's see how everything comes together at the HTTP boundary -where your val
 
 ---
 
-*Next: [API Design Patterns](./api). Building production-ready HTTP APIs.*
+*Next: [API Design Patterns](..//api). Building production-ready HTTP APIs.*
 

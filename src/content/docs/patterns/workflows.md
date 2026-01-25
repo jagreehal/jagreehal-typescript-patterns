@@ -3,7 +3,7 @@ title: Composing Workflows
 description: Orchestrate multi-step operations with sagas, parallel execution, batch processing, and human-in-the-loop patterns using awaitly.
 ---
 
-*Previously: [Typed Errors](./errors). We learned to make failure explicit. But what happens when a multi-step operation fails halfway through?*
+*Previously: [Typed Errors](..//errors). We learned to make failure explicit. But what happens when a multi-step operation fails halfway through?*
 
 ---
 
@@ -303,7 +303,7 @@ When compensation is impossible, document what *can* be done (e.g., "queue for m
 
 ### Idempotency and Retries
 
-When combining sagas with retries (via `step.retry()` from [Resilience Patterns](./resilience)), ensure side-effecting steps are idempotent. Use idempotency keys so a retry can't double-apply:
+When combining sagas with retries (via `step.retry()` from [Resilience Patterns](..//resilience)), ensure side-effecting steps are idempotent. Use idempotency keys so a retry can't double-apply:
 
 ```typescript
 const payment = await saga.step(
@@ -1057,7 +1057,7 @@ const result = await orderFulfillment(async (saga, deps) => {
 
 5. **Return minimal, stable values from steps.** Step return values are serialized into workflow state. Return IDs and small immutable data -not full objects, secrets, or PII.
 
-6. **Use parallel operations for independent calls.** `allAsync` for mandatory data; `allSettledAsync` when you need all errors reported. Add `step.retry()` and `step.withTimeout()` from [Resilience Patterns](./resilience) when needed.
+6. **Use parallel operations for independent calls.** `allAsync` for mandatory data; `allSettledAsync` when you need all errors reported. Add `step.retry()` and `step.withTimeout()` from [Resilience Patterns](..//resilience) when needed.
 
 7. **Respect rate limits with `processInBatches`.** Never overwhelm downstream systems. Use cursor-based checkpoints for resume capability.
 
@@ -1092,4 +1092,4 @@ But first, let's zoom out. We've been composing functions into workflows. There'
 
 ---
 
-*Next: [Composition Patterns](./composition). Building extensible systems from small pieces.*
+*Next: [Composition Patterns](..//composition). Building extensible systems from small pieces.*

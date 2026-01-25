@@ -3,7 +3,7 @@ title: Composition Patterns
 description: Build extensible systems by combining small, focused pieces instead of predicting every requirement upfront.
 ---
 
-*Previously: [Composing Workflows](./workflows). We learned to orchestrate multi-step operations. Now let's zoom out to the philosophy that makes it work.*
+*Previously: [Composing Workflows](..//workflows). We learned to orchestrate multi-step operations. Now let's zoom out to the philosophy that makes it work.*
 
 ---
 
@@ -203,7 +203,7 @@ Adding Slack? Modify the function. Adding a data warehouse? Modify it again.
 type SendChannel = (args: { notification: Notification }) => Promise<void>;
 ```
 
-Each channel follows [fn(args, deps)](./functions). The factory functions (`createSendEmail`, `createSendSms`, etc.) are **implemented functions** that bind deps at creation time, returning a function that takes only args. This keeps every channel callable the same way, so arrays and wrappers don't care which dependencies it needs:
+Each channel follows [fn(args, deps)](..//functions). The factory functions (`createSendEmail`, `createSendSms`, etc.) are **implemented functions** that bind deps at creation time, returning a function that takes only args. This keeps every channel callable the same way, so arrays and wrappers don't care which dependencies it needs:
 
 > This is just pre-binding dependencies:
 > `createSendEmail(deps)` returns `(args) => sendEmail(args, deps)`
@@ -287,7 +287,7 @@ export function createNotificationService(deps: NotificationServiceDeps) {
 }
 ```
 
-The actual [composition root](./functions#where-does-this-live) is where you create clients and wire services together:
+The actual [composition root](..//functions#where-does-this-live) is where you create clients and wire services together:
 
 ```typescript
 // main.ts (composition root)
@@ -405,7 +405,7 @@ const sendEmail = createSendEmail({ emailClient });
 const sendEmailWithRetry = withRetry(sendEmail, 3);
 ```
 
-**Wrappers compose.** Want logging too? Inject the logger to stay consistent with [fn(args, deps)](./functions):
+**Wrappers compose.** Want logging too? Inject the logger to stay consistent with [fn(args, deps)](..//functions):
 
 ```typescript
 // wrappers/logging.ts
@@ -530,7 +530,7 @@ No existing code changed. The notification service doesn't know push exists. It 
 
 4. **Compose at startup.** Wire pieces together in your composition root. Business logic doesn't know how pieces are composed.
 
-Failure semantics (retries, escalation, partial failure) are layered on top. See [Resilience Patterns](./resilience).
+Failure semantics (retries, escalation, partial failure) are layered on top. See [Resilience Patterns](..//resilience).
 
 ---
 
@@ -552,12 +552,12 @@ The patterns come first. The principles explain *why* they work.
 
 This chapter is part of a consistent architecture:
 
-- **[Validation](./validation)** guards the boundary. Inputs are parsed before they reach functions
-- **[Typed Errors](./errors)** make failure explicit. Results instead of exceptions
-- **[Workflows](./workflows)** orchestrate multi-step operations with compensation
+- **[Validation](..//validation)** guards the boundary. Inputs are parsed before they reach functions
+- **[Typed Errors](..//errors)** make failure explicit. Results instead of exceptions
+- **[Workflows](..//workflows)** orchestrate multi-step operations with compensation
 - **Composition** (this chapter) builds extensible pieces that combine
-- **[Observability](./opentelemetry)** wraps functions without polluting them
-- **[Resilience](./resilience)** adds retries at the workflow level, not inside functions
+- **[Observability](..//opentelemetry)** wraps functions without polluting them
+- **[Resilience](..//resilience)** adds retries at the workflow level, not inside functions
 
 Each concern shifts outward to its proper layer, keeping core functions focused on business logic only.
 
@@ -571,4 +571,4 @@ But there's something we've glossed over: when things go wrong inside these comp
 
 ---
 
-*Next: [Observability with OpenTelemetry](./opentelemetry). Making execution visible without cluttering business logic.*
+*Next: [Observability with OpenTelemetry](..//opentelemetry). Making execution visible without cluttering business logic.*

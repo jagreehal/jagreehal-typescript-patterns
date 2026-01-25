@@ -3,7 +3,7 @@ title: Validation at the Boundary
 description: A pragmatic three-layer approach to validation, balancing correctness with maintainability through boundary parsing, invariant construction, and domain rules.
 ---
 
-*Previously: [Functions Over Classes](./functions). We established `fn(args, deps)` as our core pattern.*
+*Previously: [Functions Over Classes](..//functions). We established `fn(args, deps)` as our core pattern.*
 
 ---
 
@@ -328,7 +328,7 @@ async function validateTransfer(...): Promise<Result<ValidatedTransfer, Transfer
 async function validateTransfer(...): Promise<ValidatedTransfer>
 ```
 
-See [Typed Errors](./errors) for the full Result pattern.
+See [Typed Errors](..//errors) for the full Result pattern.
 
 ---
 
@@ -636,4 +636,4 @@ It returns an error instead of throwing. Why? And how do we compose these `Resul
 
 ---
 
-*Next: [Typed Errors](./errors). Making failure explicit with Result types.*
+*Next: [Typed Errors](..//errors). Making failure explicit with Result types.*

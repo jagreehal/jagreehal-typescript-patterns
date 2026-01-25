@@ -389,7 +389,7 @@ This isn't "classes bad, functions good." Classes can still work if they're:
 - **IO-free.** They don't reach out to databases or APIs directly.
 - **Delegating.** They call pure functions that do the real work.
 
-The problem isn't the `class` keyword. It's when classes accumulate hidden state, implicit dependencies, and methods that secretly share everything through `this`. The `fn(args, deps)` pattern makes it *harder* to do that by accident. More on this in [Functions Over Classes](./functions).
+The problem isn't the `class` keyword. It's when classes accumulate hidden state, implicit dependencies, and methods that secretly share everything through `this`. The `fn(args, deps)` pattern makes it *harder* to do that by accident. More on this in [Functions Over Classes](..//functions).
 
 ---
 
@@ -783,5 +783,5 @@ A healthy test suite has many fast unit tests and fewer slower integration tests
 
 It all starts with testing. If your code is hard to test, something's wrong with the structure. Testability isn't a nice-to-have. It's a design signal.
 
-Let's begin: [Functions Over Classes](./functions)
+Let's begin: [Functions Over Classes](..//functions)
 
