@@ -118,7 +118,101 @@ graph LR
 
 ---
 
-## "But That's So Verbose!"
+## Why This Matters
+
+### 1. Each Function Declares Exactly What It Needs
+
+With classes, the constructor accumulates everything:
+
+```typescript
+class UserService {
+  constructor(
+    private db: Database,
+    private logger: Logger,
+    private mailer: Mailer, // only createUser needs this
+    private cache: Cache, // only someOtherMethod needs this
+  ) {}
+}
+```
+
+With functions, each one declares its own deps:
+
+```typescript
+type GetUserDeps = { db: Database; logger: Logger };
+type CreateUserDeps = { db: Database; logger: Logger; mailer: Mailer };
+```
+
+Look at that. `getUser` doesn't pretend to need `mailer`. The type system documents the truth.
+
+### 2. Testing Gets Simpler
+
+```typescript
+import { describe, it, expect } from 'vitest';
+import { mock } from 'vitest-mock-extended';
+import { getUser, type GetUserDeps } from './get-user';
+
+// Function: pass only what the function needs
+it('returns user when found', async () => {
+  const mockUser = { id: '123', name: 'Alice', email: 'alice@test.com' };
+
+  const deps = mock<GetUserDeps>();
+  deps.db.findUser.mockResolvedValue(mockUser);
+
+  const result = await getUser({ userId: '123' }, deps);
+  expect(result).toEqual(mockUser);
+});
+```
+
+Compare to the class version where you'd have to mock `mailer`, `cache`, and everything else the constructor demands, even though `getUser` doesn't touch them.
+
+### 3. No Hidden Coupling
+
+In a class, any method can call any other method via `this`:
+
+```typescript
+class UserService {
+  async createUser(name: string, email: string) {
+    const user = await this.db.save({ name, email });
+    await this.sendWelcomeEmail(user); // hidden dependency
+    await this.updateMetrics('user_created'); // hidden dependency
+    return user;
+  }
+
+  private sendWelcomeEmail(user: User) {
+    /* ... */
+  }
+  private updateMetrics(event: string) {
+    /* ... */
+  }
+}
+```
+
+You're reviewing a PR that changes `sendWelcomeEmail` to require an API key. The PR looks simple: add `apiKey` to the constructor, use it in `sendWelcomeEmail`. But wait -what calls `sendWelcomeEmail`? You grep for it: called from `createUser`, `reactivateUser`, and `inviteUser`. Do all those callers have the context needed for this new API call? You can't tell from the PR. You have to trace through every method that touches `this`.
+
+With functions, collaborators must be explicit:
+
+```typescript
+// Args and Deps defined explicitly (contract-first)
+type CreateUserArgs = { name: string; email: string };
+type CreateUserDeps = {
+  db: Database;
+  sendWelcomeEmail: SendWelcomeEmail;
+  updateMetrics: UpdateMetrics;
+};
+
+async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
+  const user = await deps.db.save(args);
+  await deps.sendWelcomeEmail({ user });
+  await deps.updateMetrics({ event: 'user_created' });
+  return user;
+}
+```
+
+Want to know what `createUser` depends on? Look at its deps type. It's right there.
+
+---
+
+## Wiring It Up
 
 I hear you. Having to pass deps everywhere sounds tedious. Won't your call sites become cluttered with infrastructure?
 
@@ -158,11 +252,57 @@ You get both worlds:
 - Functions stay independent (per-function deps)
 - Call sites stay clean (factory binds deps)
 
+### Where Does This Live?
+
+The factory gets called in your **Composition Root**, the entry point where you wire everything together. This is typically `main.ts`, `server.ts`, or wherever your app boots:
+
+```typescript
+// main.ts (Composition Root)
+import { createUserService } from './services/user';
+import { createDb } from './infra/db';
+import { createLogger } from './infra/logger';
+
+// Create infrastructure once
+const db = createDb(process.env.DATABASE_URL);
+const logger = createLogger({ level: 'info' });
+
+// Wire deps into services
+const deps = { db, logger };
+const userService = createUserService({ deps });
+
+// Start your server with wired services
+const app = createApp({ userService });
+app.listen(3000);
+```
+
+The Composition Root is the _only_ place that knows about all dependencies. Your handlers, routes, and business functions don't know how deps were created. They just receive them.
+
+```mermaid
+graph TD
+    A[Composition Root] -->|wire deps| B[Service Factory]
+    A -->|provides wired services| C[Services API]
+    B -->|creates| C
+    C -->|calls| D[Core Functions]
+    D -->|uses deps| E[Infrastructure]
+
+    style A fill:#475569,stroke:#0f172a,stroke-width:2px,color:#fff
+    style B fill:#64748b,stroke:#0f172a,stroke-width:2px,color:#fff
+    style C fill:#94a3b8,stroke:#0f172a,stroke-width:2px,color:#0f172a
+    style D fill:#cbd5e1,stroke:#0f172a,stroke-width:2px,color:#0f172a
+    style E fill:#e2e8f0,stroke:#0f172a,stroke-width:2px,color:#0f172a
+
+    linkStyle 0 stroke:#0f172a,stroke-width:3px
+    linkStyle 1 stroke:#0f172a,stroke-width:3px
+    linkStyle 2 stroke:#0f172a,stroke-width:3px
+    linkStyle 3 stroke:#0f172a,stroke-width:3px
+    linkStyle 4 stroke:#0f172a,stroke-width:3px
+```
+
 ---
 
-## Do I Have to Pass `deps` Every Time?
+## Partial Application
 
-No, you only need to _declare_ dependencies explicitly in the implementation. You don't need to _thread_ them through every call site.
+No, you don't have to _thread_ deps through every call site. You only need to _declare_ dependencies explicitly in the implementation.
 
 The core pattern stays:
 
@@ -262,7 +402,9 @@ This helper is just a partial application utility. It reinforces that the underl
 
 ---
 
-## Why `fn(args, deps)` (Not `fn({ args, deps })`)
+## Design Decisions
+
+### Why `fn(args, deps)` (Not `fn({ args, deps })`)
 
 You might wonder why this pattern uses two parameters instead of a single object like `{ args, deps }`.
 
@@ -277,9 +419,7 @@ Different lifetimes deserve different parameters.
 
 > Note: We intentionally avoid currying here. While it works, explicit parameters keep stack traces simpler and avoid unnecessary closures in hot paths.
 
----
-
-## Why Not `fn(args, deps, opts)`?
+### Why Not `fn(args, deps, opts)`?
 
 You'll sometimes see people add a third parameter like `fn(args, deps, opts)`. Don't.
 
@@ -292,9 +432,7 @@ A third `opts` bag usually becomes a dumping ground that hides domain meaning an
 
 The rule is simple: **per-call = `args`**, **per-app/per-module = `deps`**. No third bucket.
 
----
-
-## What About Context?
+### What About Context?
 
 You might ask: 'What about request-scoped context like trace IDs, user info, or cancellation signals?'
 
@@ -355,148 +493,6 @@ If context changes business behavior (e.g. tenant isolation or authorization), m
 
 ---
 
-### Where Does This Live?
-
-The factory gets called in your **Composition Root**, the entry point where you wire everything together. This is typically `main.ts`, `server.ts`, or wherever your app boots:
-
-```typescript
-// main.ts (Composition Root)
-import { createUserService } from './services/user';
-import { createDb } from './infra/db';
-import { createLogger } from './infra/logger';
-
-// Create infrastructure once
-const db = createDb(process.env.DATABASE_URL);
-const logger = createLogger({ level: 'info' });
-
-// Wire deps into services
-const deps = { db, logger };
-const userService = createUserService({ deps });
-
-// Start your server with wired services
-const app = createApp({ userService });
-app.listen(3000);
-```
-
-The Composition Root is the _only_ place that knows about all dependencies. Your handlers, routes, and business functions don't know how deps were created. They just receive them.
-
-```mermaid
-graph TD
-    A[Composition Root] -->|wire deps| B[Service Factory]
-    A -->|provides wired services| C[Services API]
-    B -->|creates| C
-    C -->|calls| D[Core Functions]
-    D -->|uses deps| E[Infrastructure]
-
-    style A fill:#475569,stroke:#0f172a,stroke-width:2px,color:#fff
-    style B fill:#64748b,stroke:#0f172a,stroke-width:2px,color:#fff
-    style C fill:#94a3b8,stroke:#0f172a,stroke-width:2px,color:#0f172a
-    style D fill:#cbd5e1,stroke:#0f172a,stroke-width:2px,color:#0f172a
-    style E fill:#e2e8f0,stroke:#0f172a,stroke-width:2px,color:#0f172a
-
-    linkStyle 0 stroke:#0f172a,stroke-width:3px
-    linkStyle 1 stroke:#0f172a,stroke-width:3px
-    linkStyle 2 stroke:#0f172a,stroke-width:3px
-    linkStyle 3 stroke:#0f172a,stroke-width:3px
-    linkStyle 4 stroke:#0f172a,stroke-width:3px
-```
-
----
-
-## Why This Matters
-
-### 1. Each Function Declares Exactly What It Needs
-
-With classes, the constructor accumulates everything:
-
-```typescript
-class UserService {
-  constructor(
-    private db: Database,
-    private logger: Logger,
-    private mailer: Mailer, // only createUser needs this
-    private cache: Cache, // only someOtherMethod needs this
-  ) {}
-}
-```
-
-With functions, each one declares its own deps:
-
-```typescript
-type GetUserDeps = { db: Database; logger: Logger };
-type CreateUserDeps = { db: Database; logger: Logger; mailer: Mailer };
-```
-
-Look at that. `getUser` doesn't pretend to need `mailer`. The type system documents the truth.
-
-### 2. Testing Gets Simpler
-
-```typescript
-import { describe, it, expect } from 'vitest';
-import { mock } from 'vitest-mock-extended';
-import { getUser, type GetUserDeps } from './get-user';
-
-// Function: pass only what the function needs
-it('returns user when found', async () => {
-  const mockUser = { id: '123', name: 'Alice', email: 'alice@test.com' };
-
-  const deps = mock<GetUserDeps>();
-  deps.db.findUser.mockResolvedValue(mockUser);
-
-  const result = await getUser({ userId: '123' }, deps);
-  expect(result).toEqual(mockUser);
-});
-```
-
-Compare to the class version where you'd have to mock `mailer`, `cache`, and everything else the constructor demands, even though `getUser` doesn't touch them.
-
-### 3. No Hidden Coupling
-
-In a class, any method can call any other method via `this`:
-
-```typescript
-class UserService {
-  async createUser(name: string, email: string) {
-    const user = await this.db.save({ name, email });
-    await this.sendWelcomeEmail(user); // hidden dependency
-    await this.updateMetrics('user_created'); // hidden dependency
-    return user;
-  }
-
-  private sendWelcomeEmail(user: User) {
-    /* ... */
-  }
-  private updateMetrics(event: string) {
-    /* ... */
-  }
-}
-```
-
-You're reviewing a PR that changes `sendWelcomeEmail` to require an API key. The PR looks simple: add `apiKey` to the constructor, use it in `sendWelcomeEmail`. But wait -what calls `sendWelcomeEmail`? You grep for it: called from `createUser`, `reactivateUser`, and `inviteUser`. Do all those callers have the context needed for this new API call? You can't tell from the PR. You have to trace through every method that touches `this`.
-
-With functions, collaborators must be explicit:
-
-```typescript
-// Args and Deps defined explicitly (contract-first)
-type CreateUserArgs = { name: string; email: string };
-type CreateUserDeps = {
-  db: Database;
-  sendWelcomeEmail: SendWelcomeEmail;
-  updateMetrics: UpdateMetrics;
-};
-
-async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
-  const user = await deps.db.save(args);
-  await deps.sendWelcomeEmail({ user });
-  await deps.updateMetrics({ event: 'user_created' });
-  return user;
-}
-```
-
-Want to know what `createUser` depends on? Look at its deps type. It's right there.
-
----
-
 ## When Classes Are Still Fine
 
 I'm not saying "never use classes." Classes work well when:
@@ -515,106 +511,54 @@ For business logic? Prefer functions.
 
 ---
 
-## Grouping Related Functions: The Trade-off
+## The Rules
 
-When you end up with many related functions (5+), you have two valid ways to inject them:
+1. **Per-function deps.** Avoid god objects. Each function declares exactly what it needs. Group related functions only when they're cohesive and always used together.
 
-- **Inject individually** (optimizes for precision: minimal deps per consumer)
-- **Inject as a grouped object** (optimizes for wiring: one thing to pass around)
+2. **Contract-first for inputs, intentional for outputs.** Define `Args` and `Deps` types explicitly before the function (they are the contract). For return types, derive for internal helpers using `Awaited<ReturnType<typeof fn>>`, but define explicitly for boundary/public APIs to prevent accidental contract changes. Never use `Parameters<typeof fn>` for Args/Deps.
 
-This choice is not about type safety -you can export explicit input/output types either way. It's about how your codebase uses these functions.
+3. **Inject what you want to mock.** infrastructure (db, logger) and collaborators. Import pure utilities you'll never mock (think `lodash`, `slugify`, math helpers -only inject things that hit network, disk, or the clock).
 
-> Pick one approach per module. If grouping starts to feel like a "god object", split it.
+   Don't inject pure functions:
 
-### Approach 1: Inject Individually (default)
+   ```typescript
+   // ❌ Over-injecting
+   function createUser(args, deps: { db; logger; slugify; randomUUID }) {}
 
-Use this when most consumers only need a subset (1–2 functions), or when you want dependency lists to stay honest and minimal.
+   // ✅ Only inject what you'll mock
+   import { slugify } from 'slugify';
+   import { randomUUID } from 'crypto';
+   function createUser(args, deps: { db; logger }) {}
+   ```
 
-```ts
-// user-functions.ts
-// Args and Deps defined explicitly (contract-first)
-export type GetUserArgs = { userId: string };
-export type GetUserDeps = { db: Database; logger: Logger };
+4. **Trust validated input.** Core functions don't re-validate args. That's the boundary's job. See [Validation at the Boundary](./validation).
 
-export type CreateUserArgs = { name: string; email: string };
-export type CreateUserDeps = { db: Database; logger: Logger; mailer: Mailer };
+5. **Factory at the boundary.** Wire deps once, expose clean API.
 
-export async function getUser(args: GetUserArgs, deps: GetUserDeps) {
-  // ...
-}
+The pattern: `fn(args, deps)`
 
-export async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
-  // ...
-}
+```mermaid
+graph TD
+    A[Handlers / Routes<br/>userService.getUser] --> B[Factory boundary<br/>createUserService]
+    B --> C[Core Functions<br/>getUser, createUser]
 
-// Args and Deps defined explicitly (contract-first) - see Type Exports section
-// export type GetUserArgs = { userId: string };
-// export type CreateUserArgs = { name: string; email: string };
+    style A fill:#475569,stroke:#0f172a,stroke-width:2px,color:#fff
+    style B fill:#64748b,stroke:#0f172a,stroke-width:2px,color:#fff
+    style C fill:#94a3b8,stroke:#0f172a,stroke-width:2px,color:#0f172a
 
-// Function types (for injection)
-export type GetUserFn = typeof getUser;
-export type CreateUserFn = typeof createUser;
-
-// Return types - usually derived for internal helpers (XReturn naming)
-export type GetUserReturn = Awaited<ReturnType<GetUserFn>>;
-export type CreateUserReturn = Awaited<ReturnType<CreateUserFn>>;
-
-// notification-handler.ts -only needs sendWelcomeEmail
-export type NotificationHandlerDeps = {
-  sendWelcomeEmail: SendWelcomeEmailFn;
-  // doesn't need getUser or createUser
-};
+    linkStyle 0 stroke:#0f172a,stroke-width:3px
+    linkStyle 1 stroke:#0f172a,stroke-width:3px
 ```
 
-**Use this when:**
+> **Frameworks**
+>
+> This works anywhere: keep framework code as **thin wiring** and delegate real logic to `fn(args, deps)` functions.
 
-✅ Most consumers only need 1–2 functions
+---
 
-✅ You want the smallest possible dependency surface area per consumer
+## Going Deeper
 
-✅ You want "no magic strings" and direct `typeof fn` types
-
-**Trade-off:** More verbose wiring (but very explicit)
-
-### Approach 2: Inject as a Grouped Object (when they travel together)
-
-Use this when the functions form a cohesive module and most consumers inject the same set. This reduces DI boilerplate in routers/service factories.
-
-```ts
-// user-functions.ts
-export const userFns = {
-  getUser,
-  createUser,
-  updateUser,
-  deleteUser,
-  sendWelcomeEmail,
-  sendPasswordReset,
-} as const;
-
-export type UserFns = typeof userFns;
-
-// user-router.ts -needs most user functions
-export type UserRouterDeps = {
-  userFns: UserFns; // simplest
-  // If you really want to narrow the surface area, you can use Pick<UserFns, ...>
-};
-```
-
-**Use this when:**
-
-✅ The functions are usually injected together
-
-✅ You want simpler wiring and fewer constructor-like objects
-
-✅ The group is truly cohesive (not a dumping ground)
-
-**Trade-off:** Some consumers may receive more than they use (which is fine for cohesive modules)
-
-### Rule of thumb
-
-**Default to injecting individually.**
-
-Group only when the functions are a cohesive unit and genuinely travel together (often at boundaries: routers, service factories, composition root). If grouping starts to feel like a "god object", split it.
+The sections below cover advanced topics: detailed type export patterns, grouping strategies, migration guides, and enforcement. Start here once you're comfortable with the core pattern.
 
 ---
 
@@ -810,52 +754,110 @@ export type GetUserValue = GetUserReturn extends { ok: true; value: infer V }
 
 ---
 
-## The Rules
+## Grouping Related Functions: The Trade-off
 
-1. **Per-function deps.** Avoid god objects. Each function declares exactly what it needs. Group related functions only when they're cohesive and always used together.
+When you end up with many related functions (5+), you have two valid ways to inject them:
 
-2. **Contract-first for inputs, intentional for outputs.** Define `Args` and `Deps` types explicitly before the function (they are the contract). For return types, derive for internal helpers using `Awaited<ReturnType<typeof fn>>`, but define explicitly for boundary/public APIs to prevent accidental contract changes. Never use `Parameters<typeof fn>` for Args/Deps.
+- **Inject individually** (optimizes for precision: minimal deps per consumer)
+- **Inject as a grouped object** (optimizes for wiring: one thing to pass around)
 
-3. **Inject what you want to mock.** infrastructure (db, logger) and collaborators. Import pure utilities you'll never mock (think `lodash`, `slugify`, math helpers -only inject things that hit network, disk, or the clock).
+This choice is not about type safety -you can export explicit input/output types either way. It's about how your codebase uses these functions.
 
-   Don't inject pure functions:
+> Pick one approach per module. If grouping starts to feel like a "god object", split it.
 
-   ```typescript
-   // ❌ Over-injecting
-   function createUser(args, deps: { db; logger; slugify; randomUUID }) {}
+### Approach 1: Inject Individually (default)
 
-   // ✅ Only inject what you'll mock
-   import { slugify } from 'slugify';
-   import { randomUUID } from 'crypto';
-   function createUser(args, deps: { db; logger }) {}
-   ```
+Use this when most consumers only need a subset (1–2 functions), or when you want dependency lists to stay honest and minimal.
 
-4. **Trust validated input.** Core functions don't re-validate args. That's the boundary's job. See [Validation at the Boundary](./validation).
+```ts
+// user-functions.ts
+// Args and Deps defined explicitly (contract-first)
+export type GetUserArgs = { userId: string };
+export type GetUserDeps = { db: Database; logger: Logger };
 
-5. **Factory at the boundary.** Wire deps once, expose clean API.
+export type CreateUserArgs = { name: string; email: string };
+export type CreateUserDeps = { db: Database; logger: Logger; mailer: Mailer };
 
-The pattern: `fn(args, deps)`
+export async function getUser(args: GetUserArgs, deps: GetUserDeps) {
+  // ...
+}
 
-```mermaid
-graph TD
-    A[Handlers / Routes<br/>userService.getUser] --> B[Factory boundary<br/>createUserService]
-    B --> C[Core Functions<br/>getUser, createUser]
+export async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
+  // ...
+}
 
-    style A fill:#475569,stroke:#0f172a,stroke-width:2px,color:#fff
-    style B fill:#64748b,stroke:#0f172a,stroke-width:2px,color:#fff
-    style C fill:#94a3b8,stroke:#0f172a,stroke-width:2px,color:#0f172a
+// Args and Deps defined explicitly (contract-first) - see Type Exports section
+// export type GetUserArgs = { userId: string };
+// export type CreateUserArgs = { name: string; email: string };
 
-    linkStyle 0 stroke:#0f172a,stroke-width:3px
-    linkStyle 1 stroke:#0f172a,stroke-width:3px
+// Function types (for injection)
+export type GetUserFn = typeof getUser;
+export type CreateUserFn = typeof createUser;
+
+// Return types - usually derived for internal helpers (XReturn naming)
+export type GetUserReturn = Awaited<ReturnType<GetUserFn>>;
+export type CreateUserReturn = Awaited<ReturnType<CreateUserFn>>;
+
+// notification-handler.ts -only needs sendWelcomeEmail
+export type NotificationHandlerDeps = {
+  sendWelcomeEmail: SendWelcomeEmailFn;
+  // doesn't need getUser or createUser
+};
 ```
 
-> **Frameworks**
->
-> This works anywhere: keep framework code as **thin wiring** and delegate real logic to `fn(args, deps)` functions.
+**Use this when:**
+
+✅ Most consumers only need 1–2 functions
+
+✅ You want the smallest possible dependency surface area per consumer
+
+✅ You want "no magic strings" and direct `typeof fn` types
+
+**Trade-off:** More verbose wiring (but very explicit)
+
+### Approach 2: Inject as a Grouped Object (when they travel together)
+
+Use this when the functions form a cohesive module and most consumers inject the same set. This reduces DI boilerplate in routers/service factories.
+
+```ts
+// user-functions.ts
+export const userFns = {
+  getUser,
+  createUser,
+  updateUser,
+  deleteUser,
+  sendWelcomeEmail,
+  sendPasswordReset,
+} as const;
+
+export type UserFns = typeof userFns;
+
+// user-router.ts -needs most user functions
+export type UserRouterDeps = {
+  userFns: UserFns; // simplest
+  // If you really want to narrow the surface area, you can use Pick<UserFns, ...>
+};
+```
+
+**Use this when:**
+
+✅ The functions are usually injected together
+
+✅ You want simpler wiring and fewer constructor-like objects
+
+✅ The group is truly cohesive (not a dumping ground)
+
+**Trade-off:** Some consumers may receive more than they use (which is fine for cohesive modules)
+
+### Rule of thumb
+
+**Default to injecting individually.**
+
+Group only when the functions are a cohesive unit and genuinely travel together (often at boundaries: routers, service factories, composition root). If grouping starts to feel like a "god object", split it.
 
 ---
 
-## Dependency Injection & Testability Guidelines
+## Migration Guide
 
 ### Goals
 
@@ -891,8 +893,8 @@ fn(args, deps);
 - **args** → varies per call (input data)
 - **deps** → injected collaborators (db, cache, logger, other functions)
 
-No classes.  
-No `this`.  
+No classes.
+No `this`.
 No hidden state.
 
 ### Three-Phase Migration Strategy
@@ -901,12 +903,12 @@ Use this when refactoring existing code.
 
 #### Tests Enable a Strangler Fig Migration
 
-If tests already cover the current behavior, don’t rewrite everything at once. Migrate **behind a seam**:
+If tests already cover the current behavior, don't rewrite everything at once. Migrate **behind a seam**:
 
 1. **Lock the contract.** Add a small set of tests at the service boundary (inputs → outputs + side effects). These should stay valid no matter how internals change.
 2. **Introduce a seam.** Keep the existing class/module, but route calls through a factory/wrapper so you can switch implementations per method. Your service factory is usually the seam.
 3. **Migrate one function at a time.** Implement the new `fn(args, deps)` version alongside the old one, then swap the wrapper to call the new function for that single path.
-4. **Prove equivalence.** Re-run the same contract tests. If behavior changes, it’s a bug (unless you intended to change the contract).
+4. **Prove equivalence.** Re-run the same contract tests. If behavior changes, it's a bug (unless you intended to change the contract).
 5. **Delete dead code.** Once every path routes to the new functions, remove the old class/module and the migration glue.
 
 The three-phase migration below shows how to refactor a single function. Use this strangler fig approach to migrate entire services incrementally.
@@ -953,8 +955,8 @@ export async function sendWelcomeEmail(
 }
 ```
 
-✅ Safe, incremental  
-✅ Existing callers continue to work  
+✅ Safe, incremental
+✅ Existing callers continue to work
 ✅ Now testable
 
 Phase 1 is transitional. Once all call sites are updated, move to Phase 2 to enforce explicit dependency injection.
@@ -985,8 +987,8 @@ export async function sendWelcomeEmail(
 }
 ```
 
-✅ Fully testable  
-✅ Explicit dependencies  
+✅ Fully testable
+✅ Explicit dependencies
 ✅ No runtime imports from infrastructure
 
 **When to stop here:** If you have many call sites and want to minimize changes, Phase 2 is sufficient.
@@ -1018,8 +1020,8 @@ export async function sendWelcomeEmail(
 }
 ```
 
-✅ Named args, easier call sites  
-✅ Matches the `fn(args, deps)` pattern everywhere  
+✅ Named args, easier call sites
+✅ Matches the `fn(args, deps)` pattern everywhere
 ✅ Recommended for new code and when refactoring call sites is feasible
 
 #### Enforcement: tsconfig.json
@@ -1117,7 +1119,7 @@ For I/O-bound web applications, object allocation is orders of magnitude faster 
 
 For typical web services, **don't optimize for GC**. Optimize for correctness, testability, and maintainability.
 
-> Once you see `fn(args, deps)` as “logic + environment”, everything else, testing, composition, wiring, frameworks—falls out naturally.
+> Once you see `fn(args, deps)` as "logic + environment", everything else, testing, composition, wiring, frameworks—falls out naturally.
 
 ---
 
