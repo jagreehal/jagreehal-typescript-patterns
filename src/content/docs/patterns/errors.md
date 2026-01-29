@@ -235,12 +235,12 @@ Can we do better?
 
 Here's where [awaitly](https://github.com/jagreehal/awaitly) comes in. It gives you workflow-style composition that looks almost like regular async code.
 
-### `run()` — the default for multi-step flows
+### `run()`: the default for multi-step flows
 
 Use `run()` for most multi-step flows. It keeps code flat, readable, and exits early on the first error:
 
 ```typescript
-import { run } from 'awaitly';
+import { run } from 'awaitly/run';
 
 const result = await run(async (step) => {
   const user = await step(() => getUser({ userId }, deps));
@@ -285,7 +285,7 @@ graph LR
     linkStyle 3 stroke:#0f172a,stroke-width:3px
 ```
 
-### `createWorkflow()` — reusable flows with automatic error inference
+### `createWorkflow()`: reusable flows with automatic error inference
 
 When a flow becomes a reusable unit, name it with `createWorkflow()`. You get automatic error union inference from declared dependencies:
 
@@ -348,9 +348,9 @@ The key difference:
 - `step()` is for functions that already return `Result<T, E>` (your code)
 - `step.try()` is for functions that throw (their code)
 
-`step.try()` catches exceptions, maps them to your error type, and converts them to Results. It's the entry point where messy throwing code enters your clean Result pipeline. The required `error` parameter makes you think about how to categorize the failure—though you'll want to be specific enough to preserve meaningful information.
+`step.try()` catches exceptions, maps them to your error type, and converts them to Results. It's the entry point where messy throwing code enters your clean Result pipeline. The required `error` parameter makes you think about how to categorize the failure, though you'll want to be specific enough to preserve meaningful information.
 
-**Connection to TypeScript Config:** Note that `JSON.parse` returns `any` by default, which bypasses your type checking. With [@total-typescript/ts-reset](..//typescript-config), it returns `unknown` instead—forcing you to validate the result (typically with Zod). This pairs well with `step.try()`: the wrapper handles exceptions, and `ts-reset` + Zod handle type safety.
+**Connection to TypeScript Config:** Note that `JSON.parse` returns `any` by default, which bypasses your type checking. With [@total-typescript/ts-reset](..//typescript-config), it returns `unknown` instead, forcing you to validate the result (typically with Zod). This pairs well with `step.try()`: the wrapper handles exceptions, and `ts-reset` + Zod handle type safety.
 
 **For Result-returning functions:** Use `step.fromResult()` to preserve typed errors:
 
@@ -399,7 +399,7 @@ const data = await tryAsync(
 
 You've got `run()` for composition and `step.try()` for bridging throws. Here are the remaining helpers teams actually use:
 
-### 1. `match()` — handle at boundaries
+### 1. `match()`: handle at boundaries
 
 Pattern match on ok/err without manual if-checks:
 
@@ -414,7 +414,7 @@ const message = match(result, {
 
 For TaggedErrors, use `TaggedError.match()` for exhaustive handling (covered in [TaggedError Classes](#taggederror-classes-recommended)).
 
-### 2. `mapError()` — translate errors at seams
+### 2. `mapError()`: translate errors at seams
 
 When crossing module boundaries, translate internal errors to domain errors. The most common seams are infra → domain and domain → HTTP:
 
@@ -427,7 +427,7 @@ const domainResult = mapError(dbResult, (dbError) =>
 );
 ```
 
-### 3. `allAsync()` — parallel fan-out
+### 3. `allAsync()`: parallel fan-out
 
 Run operations in parallel inside workflows:
 
@@ -463,7 +463,7 @@ type AllErrors = Errors<[typeof getUser, typeof getPosts]>;
 
 Here are patterns for defining errors, from simplest to most powerful:
 
-> **Default: TaggedError.** Use it for most production code—you get stack traces, pattern matching, and context. Use string literals for small apps or quick prototypes where you don't need rich error information.
+> **Default: TaggedError.** Use it for most production code: you get stack traces, pattern matching, and context. Use string literals for small apps or quick prototypes where you don't need rich error information.
 
 ### String Literals (Simple)
 
@@ -916,7 +916,7 @@ app.get('/users/:id', async (req, res) => {
 
 ## What's Next
 
-In this chapter we focused on typed failure and composition ergonomics—making your code honest about what can go wrong.
+In this chapter we focused on typed failure and composition ergonomics, making your code honest about what can go wrong.
 
 Next, we'll focus on business workflows: retries, timeouts, parallelism, compensation, and rollback. What happens when step 2 of 5 fails? How do you undo what already succeeded?
 

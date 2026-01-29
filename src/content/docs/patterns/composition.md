@@ -304,7 +304,7 @@ const notificationService = createNotificationService({
 });
 ```
 
-This keeps "single place knows everything" discipline—`main.ts` sees all dependencies, service factories stay focused.
+This keeps "single place knows everything" discipline: `main.ts` sees all dependencies, service factories stay focused.
 
 **Choose your failure semantics.** The `Promise.all` above is all-or-nothing: it fails fast on the first rejection, potentially leaving other sends in-flight. Pick what fits your use case:
 

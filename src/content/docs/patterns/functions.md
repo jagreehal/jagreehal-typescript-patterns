@@ -3,7 +3,7 @@ title: Functions Over Classes
 description: Learn the fn(args, deps) pattern for explicit dependency injection, making your code testable and composable.
 ---
 
-_Previously: [Why This Pattern Exists](../testing). We saw how testability drives design. Now let's see the pattern itself._
+_Previously: [Testing External Infrastructure](../testing-external-services). We covered testing infrastructure you control and infrastructure you don't. Now let's see the pattern that makes everything testable._
 
 I want to talk about dependency injection.
 
@@ -398,7 +398,7 @@ Binding dependencies with partial application doesn't reduce testability or flex
 
 - **Tests** call the core function directly: `fn(args, deps)`
 - **App code** uses a wired function: `fnWithDeps(deps)(args)`
-- **Injection** still happens via `deps` — you're simply injecting once instead of repeatedly.
+- **Injection** still happens via `deps`: you're simply injecting once instead of repeatedly.
 
 ```typescript
 // core stays pure-ish and easy to test
@@ -434,7 +434,7 @@ export const bindDeps =
 const notifyViaSlack = bindDeps(notify)(slackDeps);
 ```
 
-This helper is just a partial application utility. It reinforces that the underlying pattern stays `fn(args, deps)` — we're just binding `deps` once at the boundary.
+This helper is just a partial application utility. It reinforces that the underlying pattern stays `fn(args, deps)`: we're just binding `deps` once at the boundary.
 
 ---
 
@@ -602,7 +602,7 @@ The sections below cover advanced topics: detailed type export patterns, groupin
 
 ## Type Exports: Contract-First Inputs, Intentional Outputs
 
-**Args and Deps are always part of the contract. Define them explicitly. Return types are also part of the contract—so choose whether they should be derived or fixed.**
+**Args and Deps are always part of the contract. Define them explicitly. Return types are also part of the contract, so choose whether they should be derived or fixed.**
 
 ### The Principle
 
@@ -639,7 +639,7 @@ export async function getUserLeaky(args: GetUserArgs, deps: GetUserDeps) {
   return deps.db.users.findById(args.userId); // returns DbUserRow, not User
 }
 
-// Accidental widening of the public contract — DbUserRow leaked!
+// Accidental widening of the public contract: DbUserRow leaked!
 export type GetUserLeakyReturn = Awaited<ReturnType<typeof getUserLeaky>>;
 ```
 
@@ -702,7 +702,7 @@ Explicit return types are valuable when:
 - You need a **stability boundary** (callers depend on it heavily)
 - You want to **prevent accidental leakage** (e.g., returning DB row shape by accident)
 
-If you always derive, a refactor can silently change the return type and cascade across your codebase—or worse, callers accept the widened type and you lose guarantees.
+If you always derive, a refactor can silently change the return type and cascade across your codebase, or worse, callers accept the widened type and you lose guarantees.
 
 ### ❌ Disallowed: Deriving Args/Deps from Function
 
@@ -1145,7 +1145,7 @@ The rule is pragmatic. It ignores single-parameter functions, constructors, and 
 
 Critics sometimes worry that creating many small objects (`args` objects, `deps` bags, factory functions) increases garbage collection pressure.
 
-**The reality:** Modern JS engines use generational garbage collection. Short-lived objects—like the temporary objects created during request handling—are collected in the young generation, which is optimized for exactly this pattern.
+**The reality:** Modern JS engines use generational garbage collection. Short-lived objects (like the temporary objects created during request handling) are collected in the young generation, which is optimized for exactly this pattern.
 
 For I/O-bound web applications, object allocation is orders of magnitude faster than any database query or HTTP request. The architectural clarity and type safety of the `fn(args, deps)` pattern far outweigh any micro-overhead.
 
@@ -1157,7 +1157,7 @@ For I/O-bound web applications, object allocation is orders of magnitude faster 
 
 For typical web services, **don't optimize for GC**. Optimize for correctness, testability, and maintainability.
 
-> Once you see `fn(args, deps)` as "logic + environment", everything else, testing, composition, wiring, frameworks—falls out naturally.
+> Once you see `fn(args, deps)` as "logic + environment", everything else (testing, composition, wiring, frameworks) falls out naturally.
 
 ---
 

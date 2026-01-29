@@ -956,6 +956,14 @@ Benefits:
 - Validate against spec in CI
 - Third-party integrations get accurate docs
 
+### Non-production accounts and seeded data
+
+When you design your API, think about the developer experience for the teams who will call it. Provide non-production (sandbox) accounts that come pre-populated with realistic example data (for example, customers in different states, orders in various statuses, and some deliberate error cases) so they can call your API immediately without a setup script. This makes tutorials, API explorers, and SDK examples much easier to follow and reduces the time to first successful integration.
+
+Recently, when evaluating payment providers, some offered to pre-populate our non-production account with realistic data. That meant we could explore queries and integrate with our UI straight away, instead of first working out how to create “good enough” test data. The inspect-and-adapt loop was much shorter and the experience was noticeably better because we did not have to think about setup; they showed us the value instead of telling us about it.
+
+Pair this with the sandbox and mocking patterns from [Testing External Infrastructure](../testing-external-services), so both you and your customers can trigger deterministic success and failure cases while developing and testing.
+
 ---
 
 ## Security Checklist

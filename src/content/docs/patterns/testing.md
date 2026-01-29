@@ -783,5 +783,7 @@ A healthy test suite has many fast unit tests and fewer slower integration tests
 
 It all starts with testing. If your code is hard to test, something's wrong with the structure. Testability isn't a nice-to-have. It's a design signal.
 
-Let's begin: [Functions Over Classes](..//functions)
+But we've only covered testing infrastructure you control. What about external services (payment providers, email services, third-party APIs)?
+
+Let's continue: [Testing External Infrastructure](../testing-external-services)
 
