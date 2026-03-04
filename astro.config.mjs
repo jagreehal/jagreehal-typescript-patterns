@@ -26,6 +26,7 @@ export default defineConfig({
           label: 'Core Patterns',
           items: [
             { label: 'Testing & Testability', slug: 'patterns/testing' },
+            { label: 'Testing External Infrastructure', slug: 'patterns/testing-external-services' },
             { label: 'Functions Over Classes', slug: 'patterns/functions' },
             { label: 'Validation at the Boundary', slug: 'patterns/validation' },
             { label: 'Typed Errors', slug: 'patterns/errors' },
@@ -33,6 +34,7 @@ export default defineConfig({
             { label: 'Composition Patterns', slug: 'patterns/composition' },
             { label: 'Observability with OpenTelemetry', slug: 'patterns/opentelemetry' },
             { label: 'Resilience Patterns', slug: 'patterns/resilience' },
+            { label: 'API Design Patterns', slug: 'patterns/api' },
           ],
         },
         {

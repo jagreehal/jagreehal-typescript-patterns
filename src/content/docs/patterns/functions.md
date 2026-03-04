@@ -228,12 +228,16 @@ You're reviewing a PR that changes `sendWelcomeEmail` to require an API key. The
 With functions, collaborators must be explicit:
 
 ```typescript
+// Import the real functions as types — Cmd+Click goes straight to the implementation
+import type { sendWelcomeEmail } from './send-welcome-email';
+import type { updateMetrics } from './update-metrics';
+
 // Args and Deps defined explicitly (contract-first)
 type CreateUserArgs = { name: string; email: string };
 type CreateUserDeps = {
   db: Database;
-  sendWelcomeEmail: SendWelcomeEmail;
-  updateMetrics: UpdateMetrics;
+  sendWelcomeEmail: typeof sendWelcomeEmail;
+  updateMetrics: typeof updateMetrics;
 };
 
 async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
@@ -244,7 +248,207 @@ async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
 }
 ```
 
-Want to know what `createUser` depends on? Look at its deps type. It's right there.
+Want to know what `createUser` depends on? Look at its deps type. It's right there. And because we use `typeof` with the real function import, `Cmd+Click` takes you straight to the implementation — no chasing through type aliases.
+
+---
+
+## When Your Codebase Has No Tests
+
+This is where the pattern pays for itself fastest.
+
+Most codebases don't have great test coverage. When you point an AI coding agent at code like that, the first thing it tries to do is write tests. And the first thing it struggles with is mocking.
+
+With classes, the agent has to figure out the constructor's full dependency list, mock everything (including dependencies the method doesn't use), navigate `vi.mock()` or `jest.mock()` hoisting rules, and deal with `this` bindings and private methods. The result is fragile tests full of ceremony that mock the wrong things and pass for the wrong reasons. The agent scales output fast — but it also scales entropy fast.
+
+With `fn(args, deps)`, the agent's job becomes mechanical:
+
+- Look at the `Deps` type — that's exactly what to mock
+- Look at the `Args` type — that's exactly what to pass in
+- Look at the return type — that's exactly what to assert on
+
+No guessing. No over-mocking. No `vi.mock()` hoisting gymnastics.
+
+### Give the Agent the Contract
+
+The types _are_ the prompt. When you hand an agent a function like this:
+
+```typescript
+export type CreateOrderArgs = {
+  items: Array<{ productId: string; quantity: number }>;
+  customerId: string;
+};
+
+export type CreateOrderDeps = {
+  db: Database;
+  paymentGateway: PaymentGateway;
+  logger: Logger;
+};
+
+export type CreateOrderResult = {
+  orderId: string;
+  total: number;
+  status: 'confirmed' | 'pending_payment';
+};
+
+export async function createOrder(
+  args: CreateOrderArgs,
+  deps: CreateOrderDeps,
+): Promise<CreateOrderResult> {
+  // ...
+}
+```
+
+The agent can see:
+
+- **What goes in**: `CreateOrderArgs` with exact field shapes
+- **What it depends on**: `CreateOrderDeps` — three things to mock, nothing more
+- **What comes out**: `CreateOrderResult` with exact field shapes
+
+Provide example data, schemas, and return shapes, and the test practically writes itself:
+
+```typescript
+it('creates an order and charges payment', async () => {
+  const deps = mock<CreateOrderDeps>();
+  deps.db.orders.insert.mockResolvedValue({ orderId: 'ord_123' });
+  deps.paymentGateway.charge.mockResolvedValue({ status: 'success' });
+
+  const result = await createOrder(
+    { customerId: 'cust_1', items: [{ productId: 'prod_1', quantity: 2 }] },
+    deps,
+  );
+
+  expect(result.status).toBe('confirmed');
+  expect(deps.paymentGateway.charge).toHaveBeenCalledOnce();
+});
+```
+
+No constructor ceremony. No `vi.mock()`. The dependency surface is right there in the type.
+
+Compare that to what the agent would have to produce for a class:
+
+```typescript
+// The agent has to figure out all of this ceremony
+vi.mock('../infra/db');
+vi.mock('../infra/payment');
+vi.mock('../infra/logger');
+
+const mockDb = { orders: { insert: vi.fn() }, users: { find: vi.fn() } };
+const mockPayment = { charge: vi.fn(), refund: vi.fn() };
+const mockLogger = { info: vi.fn(), error: vi.fn(), warn: vi.fn() };
+const mockCache = { get: vi.fn(), set: vi.fn() };   // not even used by this method
+const mockMetrics = { increment: vi.fn() };          // not even used by this method
+
+const service = new OrderService(mockDb, mockPayment, mockLogger, mockCache, mockMetrics);
+```
+
+The agent mocks five dependencies because the constructor demands five. It doesn't know which ones `createOrder` actually uses. The test passes, but it's lying about coverage. Two months later someone adds `this.metrics.increment('order_created')` inside `createOrder` and the test still passes — silently losing verification.
+
+### The Cheapest Harness You Can Adopt
+
+If your codebase has zero tests and you're starting to use AI coding agents, you don't need a testing framework overhaul. You don't need custom linters, structural test suites, or drift detection agents.
+
+Start writing functions as `fn(args, deps)`.
+
+That single change gives agents (and humans) a deterministic testing seam. When the dependency surface is visible, mocking is mechanical. When types define the contract, the agent doesn't have to guess. When each function is its own file, the context stays small enough for the agent to hold in its window.
+
+It's not a framework. It's a seam. And it's the smallest change that makes the biggest difference when you need to go from zero tests to meaningful coverage.
+
+### Each Function Is a Self-Contained Prompt
+
+With classes, the agent needs to load the entire service file to understand one method. It has to trace through the constructor, figure out what `this` provides, read private helpers, and understand inheritance chains. The more context the agent needs, the more likely it is to hallucinate or lose track.
+
+With `fn(args, deps)`, the agent needs one file:
+
+```text
+get-user.ts       ← the function + its types
+get-user.test.ts  ← the test
+```
+
+The types at the top of the file tell the complete story. The agent doesn't need to understand the rest of the service, the rest of the module, or the dependency graph. One file, one function, one contract. That's the entire context window it needs.
+
+### One Example Teaches the Whole Codebase
+
+Because every function follows the same shape, you can show the agent a single example:
+
+> "Here's how we write functions and tests in this codebase. Follow this pattern."
+
+And it replicates that pattern consistently across every function it writes or tests. The pattern is _uniform_. There's no variation in how dependencies are accessed, no per-service quirks, no "this service uses a factory but that one uses a singleton."
+
+With classes, every service is structured differently. Constructor patterns vary. Some use property injection, some use method injection, some use module-level singletons. The agent has to re-learn the conventions per file.
+
+With `fn(args, deps)`, the conventions are the same everywhere. One example in your project rules or prompt, and the agent stays consistent across hundreds of functions.
+
+### Type Errors Guide the Agent Back on Track
+
+When the agent writes incorrect code, the quality of the error message determines whether it self-corrects or spirals.
+
+With `fn(args, deps)`, TypeScript errors are precise:
+
+```text
+Argument of type '{ db: Database }' is not assignable to parameter of type 'CreateOrderDeps'.
+  Property 'paymentGateway' is missing.
+```
+
+That error _is_ the fix instruction. The agent reads it, adds the missing dep, and moves on.
+
+With class-based code, errors are noisier — constructor overload mismatches, `this` context issues, mock type incompatibilities that point to deep framework internals. The agent tries to fix one thing and breaks two others.
+
+### Parallel Work Without Merge Conflicts
+
+When two agents (or an agent and a human) work on the same class, they're editing the same file. Constructor changes, new methods, import additions — all competing for the same lines.
+
+With functions, `get-user.ts` and `create-order.ts` are separate files. Two agents can work on them simultaneously with zero chance of conflict. This is practical: you can fan out test-writing across your codebase without serializing the work.
+
+### The Agent Knows When It's Done
+
+With `fn(args, deps)`, the definition of "test complete" is bounded by the types:
+
+1. Mock everything in `Deps` — the type tells you the exact list
+2. Call with `Args` — the type tells you the exact shape
+3. Assert on the return — the type tells you the exact output
+
+There's no ambiguity about scope. The agent can't miss a hidden `this.metrics.track()` call because there is no `this`. If the function uses a dep, it's in the type. If it's not in the type, the function doesn't use it.
+
+With classes, the agent is always guessing: "Did I mock everything this method touches? Are there side effects through private methods? Does the base class do something I missed?" The scope is unbounded.
+
+### The Pattern Is the Constraint
+
+This is the deeper point. `fn(args, deps)` isn't just a style preference — it's a _structural constraint_ that forces both humans and AI to color within the lines.
+
+The types enforce the boundaries:
+
+- `Args` declares _what_ the function does — its intent, its inputs, its scope
+- `Deps` declares _how_ it interacts with the outside world — every collaborator, visible and named
+- The return type declares _why_ you'd call it — what you get back
+
+That's what, how, and why — encoded in the type system, not in comments or documentation that drifts.
+
+Without this kind of structural constraint, AI-generated code is a wild west. The agent produces something that works _today_, but you can't reason about it. You can't tell what it depends on. You can't tell what changed. You can't compose it with anything else because the boundaries are invisible.
+
+Linters help. Code review helps. But those are _after-the-fact_ corrections. They catch problems that already exist. The `fn(args, deps)` pattern prevents the problems from being introduced in the first place. It's better to make the wrong thing hard to write than to detect it after it's written.
+
+And this is where composition comes in. When every function has an explicit, typed dependency surface, composing functions becomes mechanical:
+
+```typescript
+// Each function declares exactly what it needs
+type ValidateOrderDeps = { db: Database };
+type ChargePaymentDeps = { paymentGateway: PaymentGateway };
+type SendConfirmationDeps = { mailer: Mailer };
+
+// Composing them is just combining their deps
+type ProcessOrderDeps = ValidateOrderDeps & ChargePaymentDeps & SendConfirmationDeps;
+
+async function processOrder(args: ProcessOrderArgs, deps: ProcessOrderDeps) {
+  const order = await validateOrder(args, deps);
+  await chargePayment({ orderId: order.id, amount: order.total }, deps);
+  await sendConfirmation({ orderId: order.id, email: order.email }, deps);
+  return order;
+}
+```
+
+You can see every dependency that `processOrder` needs by reading its type. The agent can compose these functions because the interfaces are uniform. A human reviewer can verify the composition because the dependency surface is right there in the signature.
+
+Without the pattern, composition is guesswork. With it, composition is type intersection. The constraint _is_ the enabler.
 
 ---
 
@@ -527,6 +731,38 @@ This keeps the core message clean:
 
 If context changes business behavior (e.g. tenant isolation or authorization), model it explicitly in `args` or as request-scoped `deps` -not as "extra data."
 
+### Typing Deps Fields: `typeof` for Discoverability
+
+When a dep is an injected function, there's a real DI trade-off: you gain testability but lose "Go to Definition" at the call site. Inside the handler, `Cmd+Click` on `deps.sendWelcomeEmail(...)` takes you to the mock or the destructured variable, not the real implementation. You end up chasing through factory wiring to find the actual code.
+
+**Fix: use `typeof realFunction` for deps fields.** The import references the real function, so `Cmd+Click` on the import navigates straight to the implementation:
+
+```typescript
+// ✅ Cmd+Click on the import goes to the real function
+import type { sendWelcomeEmail } from './send-welcome-email';
+import type { updateMetrics } from './update-metrics';
+
+type CreateUserDeps = {
+  sendWelcomeEmail: typeof sendWelcomeEmail;
+  updateMetrics: typeof updateMetrics;
+};
+```
+
+```typescript
+// ❌ Cmd+Click goes to a type alias, then you have to find the function
+import type { SendWelcomeEmail } from './send-welcome-email';
+import type { UpdateMetrics } from './update-metrics';
+
+type CreateUserDeps = {
+  sendWelcomeEmail: SendWelcomeEmail;
+  updateMetrics: UpdateMetrics;
+};
+```
+
+Use a named type alias only when the contract is intentionally looser than a specific implementation — e.g. the dep could be _any_ function with that shape, not just one particular function.
+
+**Rule of thumb:** if there's one real implementation that gets injected at the composition root, use `typeof`. If the dep is a generic capability (like `logger: Logger`), a named type is fine.
+
 ---
 
 ## When Classes Are Still Fine
@@ -551,7 +787,7 @@ For business logic? Prefer functions.
 
 ## The Rules
 
-1. **Per-function deps.** Avoid god objects. Each function declares exactly what it needs. Group related functions only when they're cohesive and always used together.
+1. **Per-function deps.** Avoid god objects. Each function declares exactly what it needs. Do not group functions into objects for injection—that recreates the same over-supply problem as classes; inject each function (or minimal deps) individually.
 
 2. **Contract-first for inputs, intentional for outputs.** Define `Args` and `Deps` types explicitly before the function (they are the contract). For return types, derive for internal helpers using `Awaited<ReturnType<typeof fn>>`, but define explicitly for boundary/public APIs to prevent accidental contract changes. Never use `Parameters<typeof fn>` for Args/Deps.
 
@@ -596,7 +832,7 @@ graph TD
 
 ## Going Deeper
 
-The sections below cover advanced topics: detailed type export patterns, grouping strategies, migration guides, and enforcement. Start here once you're comfortable with the core pattern.
+The sections below cover advanced topics: detailed type export patterns, migration guides, and enforcement. Start here once you're comfortable with the core pattern.
 
 ---
 
@@ -792,24 +1028,12 @@ export type GetUserValue = GetUserReturn extends { ok: true; value: infer V }
 
 ---
 
-## Grouping Related Functions: The Trade-off
+## Inject Individually (Don't Group)
 
-When you end up with many related functions (5+), you have two valid ways to inject them:
-
-- **Inject individually** (optimizes for precision: minimal deps per consumer)
-- **Inject as a grouped object** (optimizes for wiring: one thing to pass around)
-
-This choice is not about type safety -you can export explicit input/output types either way. It's about how your codebase uses these functions.
-
-> Pick one approach per module. If grouping starts to feel like a "god object", split it.
-
-### Approach 1: Inject Individually (default)
-
-Use this when most consumers only need a subset (1–2 functions), or when you want dependency lists to stay honest and minimal.
+Grouping related functions into an object (e.g. `userFns = { getUser, createUser, ... }`) and injecting that object recreates the same problem as classes: consumers receive more than they use, dependency lists stop being honest, and the "group" tends to grow into a god object. **Prefer injecting each function (or minimal deps) individually.**
 
 ```ts
-// user-functions.ts
-// Args and Deps defined explicitly (contract-first)
+// user-functions.ts — each function has its own deps
 export type GetUserArgs = { userId: string };
 export type GetUserDeps = { db: Database; logger: Logger };
 
@@ -824,74 +1048,17 @@ export async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
   // ...
 }
 
-// Args and Deps defined explicitly (contract-first) - see Type Exports section
-// export type GetUserArgs = { userId: string };
-// export type CreateUserArgs = { name: string; email: string };
-
-// Function types (for injection)
 export type GetUserFn = typeof getUser;
 export type CreateUserFn = typeof createUser;
 
-// Return types - usually derived for internal helpers (XReturn naming)
-export type GetUserReturn = Awaited<ReturnType<GetUserFn>>;
-export type CreateUserReturn = Awaited<ReturnType<CreateUserFn>>;
-
-// notification-handler.ts -only needs sendWelcomeEmail
+// Consumers declare only what they need
+// notification-handler.ts
 export type NotificationHandlerDeps = {
   sendWelcomeEmail: SendWelcomeEmailFn;
-  // doesn't need getUser or createUser
 };
 ```
 
-**Use this when:**
-
-✅ Most consumers only need 1–2 functions
-
-✅ You want the smallest possible dependency surface area per consumer
-
-✅ You want "no magic strings" and direct `typeof fn` types
-
-**Trade-off:** More verbose wiring (but very explicit)
-
-### Approach 2: Inject as a Grouped Object (when they travel together)
-
-Use this when the functions form a cohesive module and most consumers inject the same set. This reduces DI boilerplate in routers/service factories.
-
-```ts
-// user-functions.ts
-export const userFns = {
-  getUser,
-  createUser,
-  updateUser,
-  deleteUser,
-  sendWelcomeEmail,
-  sendPasswordReset,
-} as const;
-
-export type UserFns = typeof userFns;
-
-// user-router.ts -needs most user functions
-export type UserRouterDeps = {
-  userFns: UserFns; // simplest
-  // If you really want to narrow the surface area, you can use Pick<UserFns, ...>
-};
-```
-
-**Use this when:**
-
-✅ The functions are usually injected together
-
-✅ You want simpler wiring and fewer constructor-like objects
-
-✅ The group is truly cohesive (not a dumping ground)
-
-**Trade-off:** Some consumers may receive more than they use (which is fine for cohesive modules)
-
-### Rule of thumb
-
-**Default to injecting individually.**
-
-Group only when the functions are a cohesive unit and genuinely travel together (often at boundaries: routers, service factories, composition root). If grouping starts to feel like a "god object", split it.
+Wiring is a bit more verbose (each consumer lists the functions it needs), but you get honest, minimal dependency surfaces and no accidental over-supply. If a framework or legacy boundary forces you to pass a single object, keep that object as thin as possible and split it as soon as it starts to feel like a god object.
 
 ---
 
