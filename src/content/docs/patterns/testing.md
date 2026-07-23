@@ -1,5 +1,5 @@
 ---
-title: Why This Pattern Exists
+title: Testing & Testability
 description: Why testability drives design and how explicit dependency injection makes testing simpler than vi.mock.
 ---
 
@@ -782,7 +782,6 @@ A healthy test suite has many fast unit tests and fewer slower integration tests
 
 It all starts with testing. If your code is hard to test, the structure is wrong. Testability is a design signal.
 
-So far we've covered testing infrastructure you control. External services (payment providers, email services, third-party APIs) need a different approach.
+Testable code can still produce a slow, duplicated suite when several test levels claim the same behaviour. Assigning one owner to each behaviour prevents that overlap.
 
-Let's continue: [Testing External Infrastructure](../testing-external-services)
-
+Let's continue: [Testing Levels](../testing-levels)

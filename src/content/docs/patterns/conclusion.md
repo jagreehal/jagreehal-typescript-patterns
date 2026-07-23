@@ -243,5 +243,4 @@ You have the foundation now. Build on it.
 
 ---
 
-*Start from the beginning: [Why This Pattern Exists](..//testing)*
-
+*Start from the beginning: [Testing & Testability](../testing)*

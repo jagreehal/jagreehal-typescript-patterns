@@ -26,6 +26,7 @@ export default defineConfig({
           label: 'Core Patterns',
           items: [
             { label: 'Testing & Testability', slug: 'patterns/testing' },
+            { label: 'Testing Levels', slug: 'patterns/testing-levels' },
             { label: 'Testing External Infrastructure', slug: 'patterns/testing-external-services' },
             { label: 'Functions Over Classes', slug: 'patterns/functions' },
             { label: 'Validation at the Boundary', slug: 'patterns/validation' },

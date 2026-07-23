@@ -3,7 +3,7 @@ title: Testing External Infrastructure
 description: Test infrastructure you control versus infrastructure you don't, using stubs, sandboxes, MSW, and nock for integration testing.
 ---
 
-_Previously: [Why This Pattern Exists](../testing). We covered unit tests with mocks and integration tests with real databases. Now let's handle external services._
+_Previously: [Testing Levels](../testing-levels). We assigned one owner to each behaviour. Now let's choose the boundary strategy for services outside the application._
 
 We've covered testing your own code. You control the database, the cache, the business logic.
 

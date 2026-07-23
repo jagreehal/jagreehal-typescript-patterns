@@ -165,7 +165,7 @@ Compare to the class version where you'd have to mock `mailer`, `cache`, and eve
 
 ### 3. Test Files Stay Focused
 
-I prefer tests next to source files. `notify.ts` gets `notify.test.ts` for unit tests and `notify.int.test.ts` for integration tests. (See [Testing Strategy](../testing) for the full approach.)
+I prefer tests next to source files. `notify.ts` gets `notify.test.ts` for unit tests and `notify.int.test.ts` for integration tests. (See [Testing Levels](../testing-levels) for the full approach.)
 
 With functions, this works:
 
