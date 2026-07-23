@@ -7,13 +7,13 @@ description: Use strict TypeScript compiler flags to enforce patterns at compile
 
 ---
 
-You've defined patterns. Functions take object parameters. Dependencies are injected, not imported. Infrastructure stays separate from business logic.
+You've defined patterns. Functions take object parameters. You inject dependencies instead of importing them. Infrastructure stays separate from business logic.
 
-But here's the problem: **patterns without enforcement are just suggestions.**
+Patterns without enforcement are suggestions.
 
-You can write documentation. You can add comments. You can hope people remember. But in practice, especially with AI-generated code, patterns get violated. Almost-correct code slips through review.
+You can document patterns, add comments, and hope people remember them. In practice people violate them, especially with AI-generated code, and almost-correct code slips through review.
 
-TypeScript can enforce patterns at compile time. Not suggestions. Not hopes. **Enforcement.**
+TypeScript enforces patterns at compile time.
 
 ---
 
@@ -21,11 +21,11 @@ TypeScript can enforce patterns at compile time. Not suggestions. Not hopes. **E
 
 Many developers believe `strict: true` is the final boss of safety. It isn't.
 
-In 2025, the standard for "strict" has shifted toward **total type safety** -where even the built-in library's defaults are questioned. To enforce the "Never Throw" and "Validation at the Boundary" patterns, you need these additional flags.
+In 2025, the standard for "strict" has shifted toward **total type safety**, where you question even the built-in library's defaults. To enforce the "Never Throw" and "Validation at the Boundary" patterns, you need these additional flags.
 
 ### Array & Object Safety
 
-**`noUncheckedIndexedAccess`**: By default, TypeScript assumes `myArray[0]` always exists. This is a lie.
+**`noUncheckedIndexedAccess`**: By default, TypeScript assumes `myArray[0]` exists. It might not.
 
 ```typescript
 const users = ['Alice', 'Bob'];
@@ -44,9 +44,9 @@ if (first) {
 
 A customer reports: "The app crashes when I have no items in my cart." You check the code: `const firstItem = cart.items[0]`. TypeScript said it was `CartItem`. But the cart was empty. `firstItem` was `undefined`. You called `firstItem.price` and crashed. TypeScript's default behavior let you write code that crashes on empty arrays.
 
-This aligns with the "Never Throw" philosophy: missing data becomes explicit, not a runtime crash.
+This aligns with the "Never Throw" philosophy: missing data shows up in the types instead of crashing at runtime.
 
-**`exactOptionalPropertyTypes`**: Ensures that `{ id?: string }` truly means the key is *missing*, not that it exists with value `undefined`.
+**`exactOptionalPropertyTypes`**: Ensures `{ id?: string }` means the key is *missing*, not present with value `undefined`.
 
 ```typescript
 type User = { id?: string };
@@ -63,9 +63,9 @@ This prevents subtle bugs with database serialization and object iteration.
 
 ### Native Compatibility (TS 5.8+)
 
-In 2025, the TypeScript ecosystem is shifting toward a **"type-annotations only"** approach. Node.js 22+, Bun, and Deno can now run TypeScript files directly by simply stripping types -no heavy build step required. This changes what "valid TypeScript" means.
+In 2025, the TypeScript ecosystem is shifting toward a **"type-annotations only"** approach. Node.js 22+, Bun, and Deno can now run TypeScript files by stripping types, no heavy build step required. This changes what "valid TypeScript" means.
 
-**`erasableSyntaxOnly`**: This flag is now mandatory for modern backends. It ensures your code is strictly "erasable" -compatible with native runtimes that strip types without transpilation.
+**`erasableSyntaxOnly`**: This flag is mandatory for modern backends. It ensures your code stays "erasable", compatible with native runtimes that strip types without transpilation.
 
 ```typescript
 // ❌ With erasableSyntaxOnly, these fail:
@@ -86,11 +86,11 @@ class User {
 }
 ```
 
-**Why this matters:** Your TypeScript source becomes directly executable. No transpiler surprises. No divergence between what you write and what runs. The runtime behavior matches the source code exactly.
+Your TypeScript source runs as-is. The runtime behavior matches your source, with no transpiler step between what you write and what runs.
 
 ### Guarding Against Ghost Imports
 
-**`noUncheckedSideEffectImports`**: A critical safety flag that catches "ghost imports" -side-effect imports that reference files that no longer exist.
+**`noUncheckedSideEffectImports`**: A safety flag that catches "ghost imports", side-effect imports that reference files that no longer exist.
 
 ```typescript
 // Side-effect imports don't bind any values:
@@ -109,13 +109,13 @@ With `noUncheckedSideEffectImports` enabled, every side-effect import is verifie
 import "./polyfills";  // ❌ Error: Cannot find module './polyfills'
 ```
 
-This is especially important in large codebases where files get reorganized, or when using bundler plugins that handle CSS/asset imports -you'll know immediately if those files are missing.
+This matters in large codebases where you reorganize files, or when bundler plugins handle CSS/asset imports. You'll know at compile time if those files are missing.
 
 ---
 
 ## Fixing Standard Library Leaks
 
-Here's a harsh truth: `strict: true` is insufficient. TypeScript's standard library still leaks `any` through `JSON.parse`, `fetch`, and other I/O functions. This silently bypasses your [Validation at the Boundary](..//validation) pattern.
+`strict: true` is insufficient. TypeScript's standard library still leaks `any` through `JSON.parse`, `fetch`, and other I/O functions, bypassing your [Validation at the Boundary](..//validation) pattern.
 
 ```typescript
 // The problem: JSON.parse returns any
@@ -127,7 +127,7 @@ const response = await fetch('/api/user');
 const user = await response.json();  // any ← All your careful types, gone.
 ```
 
-You spent a week building a type-safe API client. Every endpoint has perfect types. You ship it. Production crashes: `Cannot read property 'id' of undefined`. You trace it to a `fetch` call. The API returned `{ data: { user: null } }` but your code expected `{ user: { id: ... } }`. TypeScript didn't warn you. The response was `any` -you could access any property, and TypeScript believed you.
+You spent a week building a type-safe API client. Every endpoint has perfect types. You ship it. Production crashes: `Cannot read property 'id' of undefined`. You trace it to a `fetch` call. The API returned `{ data: { user: null } }` but your code expected `{ user: { id: ... } }`. TypeScript didn't warn you. The response was `any`, so you could access any property, and TypeScript believed you.
 
 ### The Solution: `ts-reset`
 
@@ -154,7 +154,7 @@ const data = JSON.parse(input);
 const user = UserSchema.parse(data);  // Now it's typed
 ```
 
-**This is the key insight:** By forcing `JSON.parse` to return `unknown`, `ts-reset` makes your [Validation at the Boundary](..//validation) pattern not just a best practice, but a **compiler requirement**. You literally cannot use parsed data without validating it first. The Zod boundary becomes inescapable.
+By forcing `JSON.parse` to return `unknown`, `ts-reset` turns your [Validation at the Boundary](..//validation) pattern into a **compiler requirement**. You cannot use parsed data without validating it first. The Zod boundary becomes inescapable.
 
 It also fixes other annoyances:
 
@@ -221,7 +221,7 @@ function isRole(value: string): value is Role {
 
 This is the compiler flag that enforces the `fn(args, deps)` pattern from [Functions Over Classes](..//functions).
 
-The pattern says: infrastructure should only be imported as *types*, never at runtime. Your functions receive infrastructure through `deps`, not through imports.
+The pattern: import infrastructure only as *types*, never at runtime. Your functions receive infrastructure through `deps`.
 
 ```typescript
 // ✅ Good: type-only import, infrastructure injected via deps
@@ -251,7 +251,7 @@ Enable `verbatimModuleSyntax` to enforce this:
 }
 ```
 
-Now TypeScript *forces* you to use `import type` for types. If you try to import a runtime value from infrastructure, the compiler errors. You can't accidentally couple your business logic to infrastructure.
+Now TypeScript *forces* you to use `import type` for types. If you try to import a runtime value from infrastructure, the compiler errors. You can't couple your business logic to infrastructure by accident.
 
 This is why the pattern works: the compiler enforces the separation that makes your functions testable.
 
@@ -259,7 +259,7 @@ This is why the pattern works: the compiler enforces the separation that makes y
 
 ## The Complete Configuration
 
-Here's the 2025 `tsconfig.json` that enforces these patterns:
+The 2025 `tsconfig.json` that enforces these patterns:
 
 ```json
 {
@@ -338,7 +338,7 @@ These complement the `fn(args, deps)` pattern by making args types precise and e
 
 Complex type errors are a primary cause of pattern abandonment. Two tools help:
 
-**[Total TypeScript VS Code Extension](https://www.totaltypescript.com/vscode-extension)**: Translates obtuse TypeScript errors into plain language directly in the IDE. One user called it "the single best improvement to my DX in many years." Essential when working with complex generics like `createWorkflow` error unions.
+**[Total TypeScript VS Code Extension](https://www.totaltypescript.com/vscode-extension)**: Translates obtuse TypeScript errors into plain language in the IDE. One user called it "the single best improvement to my DX in many years." Essential when working with complex generics like `createWorkflow` error unions.
 
 **Type queries**: Use `// ^?` comments to show types inline in your editor and documentation:
 
@@ -355,7 +355,7 @@ This helps engineers understand complex generics and ensures code samples are tr
 
 As of late 2025, the TypeScript team is porting the compiler to native code (the "tsgo" project) to achieve up to 10x speedups. This native compiler uses multi-threading and optimized memory layouts.
 
-**Why stricter flags matter for performance:** Flags like `verbatimModuleSyntax` and `erasableSyntaxOnly` reduce the "heuristics" the compiler needs to perform. When the compiler doesn't have to guess whether an import is type-only, or whether a feature needs transpilation, it can take faster code paths.
+**Stricter flags help performance.** Flags like `verbatimModuleSyntax` and `erasableSyntaxOnly` reduce the "heuristics" the compiler needs to perform. When the compiler doesn't have to guess whether an import is type-only, or whether a feature needs transpilation, it can take faster code paths.
 
 ```typescript
 // With verbatimModuleSyntax, the compiler knows immediately:
@@ -366,7 +366,7 @@ import { db } from './database';       // Runtime, keep as-is
 // to determine if an import is actually used at runtime
 ```
 
-The flags we recommend aren't just about safety -they're also about performance. Stricter code is faster to compile because it's more explicit about intent.
+These flags help performance as well as safety. Stricter code compiles faster because it's more explicit about intent.
 
 ---
 

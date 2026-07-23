@@ -1,6 +1,6 @@
 ---
 title: Writing Specs for AI Coding Agents
-description: Design effective prompts and specifications that leverage AI agent capabilities while maintaining human oversight and code quality.
+description: Design prompts and specifications that use AI agent capabilities while keeping human oversight and code quality.
 ---
 
 *Bonus topic. Return to: [What We've Built](..//conclusion) or explore [React Architecture](..//react).*
@@ -11,11 +11,11 @@ description: Design effective prompts and specifications that leverage AI agent 
 
 You paste your feature requirements into an AI coding agent. It generates 500 lines of code. Half doesn't compile. The other half uses patterns your team abandoned six months ago. You spend two hours fixing what should have taken twenty minutes.
 
-The problem isn't the AI. It's the spec.
+The spec is the problem.
 
-Most developers treat AI agents like magic boxes: dump in requirements, pray for good output. But these tools have fundamental constraints: finite context windows, no persistent memory between sessions, and a tendency to confidently generate plausible-looking nonsense when given vague instructions.
+Most developers treat AI agents like magic boxes: dump in requirements, pray for good output. These tools have real constraints: finite context windows, no persistent memory between sessions, and a tendency to generate plausible-looking nonsense when given vague instructions.
 
-The solution isn't more sophisticated AI. It's better specs.
+Better specs are the fix.
 
 ---
 
@@ -23,9 +23,9 @@ The solution isn't more sophisticated AI. It's better specs.
 
 Two forces pull in opposite directions:
 
-**Comprehensive Coverage** - You want the AI to know everything: your architecture, patterns, conventions, history, constraints, edge cases, team preferences...
+**Comprehensive Coverage.** You want the AI to know everything: your architecture, patterns, conventions, history, constraints, edge cases, team preferences...
 
-**Context Limits** - AI agents have finite memory. Dump too much in, and the model loses focus. Key details drown in noise.
+**Context Limits.** AI agents have finite memory. Dump too much in, and the model loses focus. Key details drown in noise.
 
 The instinct is to write a massive spec covering every possible scenario. This fails predictably:
 
@@ -76,7 +76,7 @@ This overwhelms the agent with decisions before establishing direction. The AI m
 
 ### The Two-Phase Approach
 
-**Phase 1: Vision** - Describe what you're building and why. Let the AI draft a plan.
+**Phase 1: Vision.** Describe what you're building and why. Let the AI draft a plan.
 
 ```typescript
 // GOOD: Vision-first prompt
@@ -85,7 +85,7 @@ This overwhelms the agent with decisions before establishing direction. The AI m
 // email confirmations. Draft a plan for how you'd structure this."
 ```
 
-**Phase 2: Execution** - Review the plan, correct course, then implement piece by piece.
+**Phase 2: Execution.** Review the plan, correct course, then implement piece by piece.
 
 ```typescript
 // After reviewing the plan:
@@ -131,7 +131,7 @@ By establishing vision first:
 
 ## The Six Core Areas
 
-A good agent spec isn't a novel. It's a structured document covering specific areas. Analysis of thousands of effective agent configurations reveals a consistent pattern.
+A good agent spec is a structured document covering specific areas. Effective specs converge on the same ones.
 
 | Area | Purpose | Example |
 |------|---------|---------|
@@ -142,7 +142,7 @@ A good agent spec isn't a novel. It's a structured document covering specific ar
 | **Git Workflow** | Version control practices | "Conventional commits, feature branches" |
 | **Boundaries** | What's allowed | "Never commit secrets, ask before adding deps" |
 
-### Commands: Executable, Not Descriptive
+### Commands: Executable
 
 Don't write "run the tests." Write the exact command:
 
@@ -155,11 +155,11 @@ Don't write "run the tests." Write the exact command:
 - **Type check**: `pnpm tsc --noEmit` - Verify types without emitting
 ```
 
-Agents need executable commands, not vague instructions.
+Agents need executable commands.
 
 ### Testing: Framework and Patterns
 
-Specify not just what tool, but how to use it:
+Specify the tool and how to use it:
 
 ```markdown
 ## Testing
@@ -233,7 +233,7 @@ The difference between a helpful AI agent and a chaotic one: **clear boundaries*
 
 Most specs either have no boundaries (agent does whatever it wants) or vague ones ("follow best practices"). Neither works.
 
-The solution: **three-tier boundaries** that explicitly define autonomy levels.
+The solution: **three-tier boundaries** that define autonomy levels.
 
 ```mermaid
 graph TD
@@ -326,7 +326,7 @@ This structure gives the agent maximum autonomy on safe operations while prevent
 
 ## Modular Prompts and Context Management
 
-AI agents have finite context windows. Every token you spend on irrelevant information is a token not available for the actual task.
+AI agents have finite context windows. Every token you spend on irrelevant information is a token not available for the task.
 
 ### The Anti-Pattern
 
@@ -498,7 +498,7 @@ Self-verification catches mechanical errors. It doesn't catch:
 
 ## Spec-Driven Development Phases
 
-Working effectively with AI agents is a skill that develops over time. Here's a typical progression:
+Working with AI agents is a skill that develops over time. Here's a typical progression:
 
 | Phase | Focus | Human Role | Agent Role |
 |-------|-------|------------|------------|
@@ -728,7 +728,7 @@ Before presenting code as complete:
 
 ## What Makes This Different
 
-Traditional development specs describe what to build. AI agent specs also describe **how to build** - the patterns, constraints, and verification that keep output aligned with your architecture.
+Traditional development specs describe what to build. AI agent specs also describe **how to build**: the patterns, constraints, and verification that keep output aligned with your architecture.
 
 The patterns in this guide mirror the patterns throughout this documentation series:
 
@@ -737,7 +737,7 @@ The patterns in this guide mirror the patterns throughout this documentation ser
 - **Zod validation** creates clear boundaries the AI can respect
 - **Explicit testing patterns** enable self-verification
 
-A good spec doesn't just tell the AI what to build. It teaches the AI how your team builds software.
+A good spec teaches the AI how your team builds software, not only what to build.
 
 ---
 

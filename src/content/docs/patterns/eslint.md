@@ -3,7 +3,7 @@ title: Enforcing Patterns with ESLint
 description: Use ESLint rules to enforce architectural boundaries, function signatures, and import patterns at lint time.
 ---
 
-*Previously: [Enforcing Patterns with TypeScript](..//typescript-config). TypeScript catches type errors. But patterns need more enforcement.*
+*Previously: [Enforcing Patterns with TypeScript](..//typescript-config). TypeScript catches type errors; patterns need more enforcement.*
 
 ---
 
@@ -12,7 +12,7 @@ TypeScript enforces types. It doesn't enforce:
 - Function signatures (object params vs positional)
 - Import patterns (which modules can import which)
 
-For that, you need **rules**. Not documentation. Not code reviews. Rules that fail the build.
+For that, you need rules that fail the build, not documentation or code reviews.
 
 ---
 
@@ -33,9 +33,7 @@ async function getUser(args: { userId: string }) {
 
 TypeScript compiles it. The linter might warn. But it doesn't fail. The violation ships.
 
-A new developer joins the team. They read the architecture docs. They understand the pattern. Then they're rushing to meet a deadline. They write `import { db }` because it's faster. The PR reviewer is tired -it's Friday. The code ships. Six months later, half your domain layer has direct infrastructure imports. The pattern exists in docs nobody reads. The codebase doesn't follow it.
-
-**Documentation is a ritual. Rules are enforcement.**
+A new developer joins the team. They read the architecture docs. They understand the pattern. Then they're rushing to meet a deadline. They write `import { db }` because it's faster. The PR reviewer is tired, it's Friday. The code ships. Six months later, half your domain layer has direct infrastructure imports. The pattern lives in docs no one reads, and the code stops matching it.
 
 As [Jag Reehals puts it](https://arrangeactassert.com/posts/ai-code-needs-rules-not-rituals-the-proof/):
 
@@ -47,7 +45,7 @@ As [Jag Reehals puts it](https://arrangeactassert.com/posts/ai-code-needs-rules-
 
 ## ESLint as Enforcement
 
-ESLint can enforce patterns at lint time. Not in review. Not in production. **At lint time.**
+ESLint enforces patterns at lint time, before review or production.
 
 ### Enforcing Architectural Boundaries
 
@@ -84,7 +82,7 @@ export default {
 };
 ```
 
-This works but it's a blunt instrument -it blocks *all* imports from infra, everywhere.
+This works, but it's a blunt instrument that blocks every import from infra across the codebase.
 
 **Better approach:** Use [eslint-plugin-boundaries](https://github.com/javierbrea/eslint-plugin-boundaries) to define directional rules between layers:
 
@@ -137,7 +135,7 @@ This matches the architecture: dependencies point inward toward the domain.
 
 **Advanced: Module Privacy with `no-private`**
 
-For larger projects, you may want to enforce that certain files within a layer are "private" -internal helpers that shouldn't be imported from outside the module:
+For larger projects, you may want to enforce that certain files within a layer are "private", internal helpers that shouldn't be imported from outside the module:
 
 ```javascript
 // eslint.config.mjs
@@ -310,7 +308,7 @@ export default [
 
 Now importing `fs`, `crypto`, `path`, or any Node.js built-in in client code fails the build immediately.
 
-**Why this matters:** The build fails with a clear ESLint error instead of a cryptic runtime crash in production.
+**The payoff:** The build fails with a clear ESLint error instead of a cryptic runtime crash in production.
 
 ---
 
@@ -392,7 +390,7 @@ This config enforces:
 - ✅ TypeScript best practices
 - ✅ Code quality rules
 
-Violations fail the build. The patterns are enforced.
+Violations fail the build, so the patterns hold.
 
 ---
 
@@ -410,7 +408,7 @@ Beyond the pattern-specific plugins above, these plugins form a solid foundation
 npm install -D eslint-plugin-import eslint-import-resolver-typescript
 ```
 
-**[eslint-plugin-unused-imports](https://www.npmjs.com/package/eslint-plugin-unused-imports)**: High ROI -automatically removes dead imports. Eliminates "why is this here?" review churn.
+**[eslint-plugin-unused-imports](https://www.npmjs.com/package/eslint-plugin-unused-imports)**: High ROI. Auto-removes dead imports and eliminates "why is this here?" review churn.
 
 ```bash
 npm install -D eslint-plugin-unused-imports
@@ -441,13 +439,13 @@ The principle: **if a library has common pitfalls, there's probably an ESLint pl
 
 ## Why Rules Matter for AI-Generated Code
 
-AI coding agents generate code fast. But they're inconsistent. They might follow patterns. They might not.
+AI coding agents generate code fast. But they're inconsistent. They might follow your patterns, they might not.
 
-**Prompting is probabilistic.** You're hoping the model remembers your preferences and applies them consistently. Sometimes it does. Sometimes it doesn't. Often it lands in the worst possible place: almost correct.
+**Prompting is probabilistic.** You're hoping the model remembers your preferences and applies them consistently. Sometimes it does, sometimes it doesn't. Often it lands in the worst place: almost correct.
 
 Almost correct is how bugs slip through review.
 
-You ask the AI to add a user lookup function. It generates code that imports the database directly -perfectly valid TypeScript, completely wrong architecture. You catch it in review. Next week, your teammate asks for the same thing. The AI generates the same wrong pattern. Without rules, you're reviewing the same architectural violations forever.
+You ask the AI to add a user lookup function. It generates code that imports the database directly: valid TypeScript, wrong architecture. You catch it in review. Next week, your teammate asks for the same thing. The AI generates the same wrong pattern. Without rules, you're reviewing the same architectural violations forever.
 
 **Rules are deterministic.** The linter fires. The code fails. The agent fixes it. That's enforcement.
 

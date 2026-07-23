@@ -1,6 +1,6 @@
 ---
 title: Validation at the Boundary
-description: A pragmatic three-layer approach to validation, balancing correctness with maintainability through boundary parsing, invariant construction, and domain rules.
+description: A three-layer approach to validation, boundary parsing, invariant construction, and domain rules, that balances correctness with maintainability.
 ---
 
 *Previously: [Functions Over Classes](..//functions). We established `fn(args, deps)` as our core pattern.*
@@ -11,9 +11,9 @@ description: A pragmatic three-layer approach to validation, balancing correctne
 
 Two forces pull in opposite directions:
 
-**Correctness & Safety** - Functions should behave correctly no matter who calls them. Validate everything, trust nothing.
+**Correctness & Safety.** Functions should behave correctly no matter who calls them. Validate everything, trust nothing.
 
-**Clarity & Maintainability** - Validation logic should not be duplicated or drift over time. Code should be readable.
+**Clarity & Maintainability.** Validation logic should not be duplicated or drift over time. Code should be readable.
 
 If you only validate at boundaries, bugs appear when someone forgets. If you validate inside every function, logic scatters and diverges:
 
@@ -28,13 +28,13 @@ if (!args.email.match(/^[^@]+@[^@]+$/)) throw new Error('Email must be valid');
 // Forgot to validate. Oops.
 ```
 
-The solution is not dogma, but **layered responsibility**.
+The solution is **layered responsibility**.
 
 ---
 
 ## Three Kinds of Validation
 
-Most confusion comes from treating all "validation" as one thing. It isn't.
+Most confusion comes from treating all "validation" as one thing.
 
 | Kind                       | Question                             | Where                            | How                         |
 | -------------------------- | ------------------------------------ | -------------------------------- | --------------------------- |
@@ -171,7 +171,7 @@ function formatZodError(error: z.ZodError): ValidationErrorResponse {
 
 **Where:** Constructors, factory functions, branded type parsers.
 
-These rules are enforced **once, at construction**, not re-checked everywhere.
+You enforce these rules **once, at construction**, not on every call.
 
 ### The Problem with Plain Types
 
@@ -179,7 +179,7 @@ These rules are enforced **once, at construction**, not re-checked everywhere.
 async function sendEmail(to: string, subject: string) { ... }
 ```
 
-That `string` doesn't mean "valid email". It means "any sequence of characters". The type lies.
+That `string` doesn't mean "valid email", it means "any sequence of characters", and the type gives you no guarantee about which.
 
 ### Branded Types with Zod
 
@@ -272,11 +272,11 @@ const nonEmptyArray = <T extends z.ZodTypeAny>(schema: T) =>
 - Permission denied
 - Invalid state transition
 
-**Where:** Inside business functions - domain validation requires context.
+**Where:** Inside business functions. Domain validation requires context.
 
 ### When Shape Isn't Enough
 
-An email can be perfectly formatted but already taken. An amount can be positive but exceed the account balance. These checks need database access or business context.
+An email can be well-formed but already taken. An amount can be positive but exceed the account balance. These checks need database access or business context.
 
 ```typescript
 async function validateNewUser(
@@ -358,7 +358,7 @@ This is the 80% case. Types carry proof of validation.
 
 ### Option B: Shallow Assertions (Defense in Depth)
 
-For critical paths - financial operations, security checks, safety-critical code:
+For critical paths (financial operations, security checks, safety-critical code):
 
 ```typescript
 import { assert } from './utils/assert';
@@ -376,9 +376,9 @@ async function processPayment(
 
 These assertions are:
 
-- **Cheap** - simple boolean checks
-- **Local** - check specific invariants, not full schema
-- **Defensive** - catch bugs during development
+- **Cheap.** Simple boolean checks
+- **Local.** Check specific invariants, not full schema
+- **Defensive.** Catch bugs during development
 
 **When to use Option B:**
 
@@ -460,13 +460,13 @@ app.post('/transfers', async (req, res) => {
 });
 ```
 
-This separation keeps error handling honest and helps clients respond appropriately. Some teams prefer 409 for unique conflicts ("email already exists"); the key is consistency and separating shape errors from domain rule failures.
+This separation keeps error handling honest and lets clients respond to each case. Some teams prefer 409 for unique conflicts ("email already exists"); the key is consistency and separating shape errors from domain rule failures.
 
 ---
 
 ## Composition Pattern
 
-Validation and execution compose cleanly when each function has a single responsibility.
+Validation and execution compose when each function has a single responsibility.
 
 ```typescript
 // Schema defines boundary validation

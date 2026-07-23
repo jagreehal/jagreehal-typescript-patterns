@@ -26,13 +26,13 @@ Three months later:
 
 Your `sendNotification` function is now hundreds of lines with nested conditionals. Every new requirement touches every code path. Tests are brittle. Adding Slack notifications means understanding the entire function.
 
-You built a do everything function. Not because you're a bad developer, but because you didn't have composition primitives.
+You built a do everything function because you didn't have composition primitives.
 
 ---
 
 ## The Composition Mindset
 
-Here's the mindset shift: **don't solve every problem upfront. Build pieces that combine.**
+The mindset shift: **don't solve every problem upfront. Build pieces that combine.**
 
 The monolithic approach tries to predict all requirements:
 
@@ -145,8 +145,6 @@ The Single Responsibility Principle is easy to agree with and hard to apply.
 
 "Each unit should have one reason to change" sounds nice until requirements arrive. Then we add flags, options, conditionals, and configuration objects.
 
-That's not accidental.
-
 **SRP violations show up as configuration.**
 
 - `sendNotification(type, options)`
@@ -156,7 +154,7 @@ That's not accidental.
 
 Every new requirement adds a new branch. The function accumulates reasons to change.
 
-Composition is how you *resolve* SRP pressure. It's how you defer decisions until you actually have information.
+Composition is how you *resolve* SRP pressure. It's how you defer decisions until you have information.
 
 Instead of teaching one unit about more cases, you:
 
@@ -168,13 +166,13 @@ This is the same refactoring many of us learned years ago in MVVM: move business
 
 Different era, same lesson.
 
-**SRP isn't about smaller files. It's about making change happen by addition, not by rewriting existing code.**
+**SRP makes change happen by addition, not by rewriting existing code.**
 
 ---
 
 ## Fan-Out: Many Destinations, One Call
 
-Here's a common problem: you need to send the same notification to multiple destinations. Email, SMS, audit log all at once.
+You need to send the same notification to multiple destinations: email, SMS, audit log all at once.
 
 Failure semantics (all-or-nothing vs best-effort) are a composition concern, not a channel concern.
 
@@ -340,7 +338,7 @@ if (deps.slackClient) {
 }
 ```
 
-The `notify` function never changes. It doesn't know about Slack, email, or SMS. It just calls each channel.
+The `notify` function never changes. It doesn't know about Slack, email, or SMS. It calls each channel.
 
 | Approach               | Adding New Destination                      |
 |------------------------|---------------------------------------------|
@@ -516,7 +514,7 @@ if (deps.pushService) {
 }
 ```
 
-No existing code changed. The notification service doesn't know push exists. It just calls each channel.
+No existing code changed. The notification service doesn't know push exists. It calls each channel.
 
 ---
 
@@ -536,7 +534,7 @@ Failure semantics (retries, escalation, partial failure) are layered on top. See
 
 ## Why This Works (SOLID in Practice)
 
-These patterns aren't arbitrary. They embody principles that make code maintainable:
+These patterns embody principles that make code maintainable:
 
 **Open/Closed Principle.** Adding push notifications? Write `createSendPush`, add it to the array. The `notify` function never changes. Systems are *open* for extension (new channels) but *closed* for modification (existing code untouched).
 
@@ -559,7 +557,7 @@ This chapter is part of a consistent architecture:
 - **[Observability](..//opentelemetry)** wraps functions without polluting them
 - **[Resilience](..//resilience)** adds retries at the workflow level, not inside functions
 
-Each concern shifts outward to its proper layer, keeping core functions focused on business logic only.
+You move each concern outward to its proper layer, keeping core functions focused on business logic.
 
 ---
 

@@ -33,6 +33,7 @@ export default defineConfig({
             { label: 'Composing Workflows', slug: 'patterns/workflows' },
             { label: 'Composition Patterns', slug: 'patterns/composition' },
             { label: 'Observability with OpenTelemetry', slug: 'patterns/opentelemetry' },
+            { label: 'Point-in-Time Capture', slug: 'patterns/point-in-time-capture' },
             { label: 'Resilience Patterns', slug: 'patterns/resilience' },
             { label: 'API Design Patterns', slug: 'patterns/api' },
           ],

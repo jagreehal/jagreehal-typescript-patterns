@@ -7,11 +7,11 @@ description: Use load tests to find bottlenecks and chaos tests to verify resili
 
 ---
 
-Your code works. Tests pass. The traces look clean. You ship to production.
+Your code works, tests pass, and the traces look clean. You ship to production.
 
-Then Black Friday hits. Traffic spikes 10x. Response times climb from 200ms to 8 seconds. The database connection pool is exhausted. Users see timeouts. Revenue drops by the minute.
+Then Black Friday hits. Traffic spikes 10x, response times climb from 200ms to 8 seconds, and the database exhausts its connection pool. Users see timeouts while revenue drops by the minute.
 
-You open your traces. They show the same thing they always showed: single requests completing successfully. But under load, everything's different. Where's the bottleneck?
+You open your traces. They show what they always showed: single requests completing successfully. Under load, the numbers look different. Where's the bottleneck?
 
 You don't know because you never tested under load.
 
@@ -25,7 +25,7 @@ Unit tests verify correctness. Integration tests verify the stack works together
 - What breaks first under load?
 - Where do we spend the most time when the system is stressed?
 
-Your OpenTelemetry traces from [post 5](..//opentelemetry) are essential here. But traces from single requests show "happy path" performance. Under load, different problems emerge:
+Your OpenTelemetry traces from [post 5](..//opentelemetry) are essential here. But traces from single requests show "happy path" performance. Under load, you hit different problems:
 
 ```mermaid
 graph TD
@@ -140,7 +140,7 @@ Output:
      ✓ http_req_failed: rate<0.01
 ```
 
-Your thresholds passed. But this is just 10 users. What happens at 100? 1000?
+Your thresholds passed. But this is only 10 users. What happens at 100? 1000?
 
 ---
 
@@ -231,7 +231,7 @@ Some bugs only appear after hours of operation.
 
 ### 5. Spike Test: Sudden Bursts
 
-What if 500 users arrive in 10 seconds? A flash sale, a viral tweet, a marketing email blast.
+Suppose 500 users arrive in 10 seconds, driven by a flash sale or a viral tweet.
 
 ```javascript
 // load-tests/spike.js
@@ -273,7 +273,7 @@ Spike tests reveal:
 
 ## Connecting Load Tests to Traces
 
-Here's where [OpenTelemetry](..//opentelemetry) becomes invaluable. Your traces show *where* time is spent under load.
+[OpenTelemetry](..//opentelemetry) pays off here. Your traces show *where* time goes under load.
 
 ### Pass Trace Context from k6
 
@@ -351,7 +351,7 @@ Without load testing, you'd never see that 1,750ms connection pool wait. The tra
 
 ## Setting SLOs and Thresholds
 
-Don't just measure. Set expectations. k6 thresholds fail your test if SLOs aren't met:
+Measuring isn't enough; set expectations. k6 thresholds fail your test if SLOs aren't met:
 
 ```javascript
 export const options = {

@@ -3,15 +3,15 @@ title: Resilience Patterns
 description: Add retries, timeouts, and circuit breakers to handle transient failures without cluttering your business logic.
 ---
 
-*Previously: [Functions + OpenTelemetry](..//opentelemetry). We made our functions observable. Now we can see what fails. But some failures are temporary.*
+*Previously: [Point-in-Time Capture](..//point-in-time-capture). We keep a durable record of every decision. Records don't prevent failures, and some are temporary.*
 
 ---
 
 Your database connection drops for a second. Your HTTP client times out. An external service hiccups during deployment.
 
-These failures are transient. If you wait a moment and try again, they'll probably work. But right now, your functions fail on the first error. The user sees an error page. The operation fails. Everyone's unhappy.
+These failures are transient. Wait a moment, try again, and the call goes through. Right now your functions fail on the first error: the user sees an error page and the operation fails.
 
-It's 3pm on Tuesday. Your payment provider has a 2-second outage -happens once a month, lasts seconds. Every checkout in that window fails. Users see "Payment failed." Your support queue fills up. Your Slack channel lights up. By the time you check, the provider is already back. The incident lasted 2 seconds but generated 50 support tickets.
+It's 3pm on Tuesday. Your payment provider has a 2-second outage that happens once a month and lasts seconds. Every checkout in that window fails. Users see "Payment failed," your support queue fills up, and your Slack channel lights up. By the time you check, the provider is back. The incident lasted 2 seconds but generated 50 support tickets.
 
 Should you add retry logic?
 
@@ -41,9 +41,9 @@ async function getUser(args: { userId: string }, deps: GetUserDeps) {
 }
 ```
 
-Look what happened to your clean function. Half of it is now retry logic. The business logic (find user, return it) is buried.
+Half of your clean function is now retry logic. The business logic, find the user and return it, is buried.
 
-And you'd have to do this for *every* function that touches infrastructure. What about timeouts? Circuit breakers? The functions become unreadable.
+You'd repeat this for every function that touches infrastructure, then add timeouts and circuit breakers on top. The functions become unreadable.
 
 Where does resilience belong?
 
@@ -51,9 +51,9 @@ Where does resilience belong?
 
 ## Resilience at the Workflow Level
 
-Remember our architecture? Validation at the boundary. Error handling explicit. Tracing orthogonal.
+Remember the architecture: validation at the boundary, explicit error handling, orthogonal tracing.
 
-Resilience follows the same principle: **it's a composition concern, not a business logic concern**.
+Resilience follows the same principle: it's a composition concern that belongs at the workflow level.
 
 ```mermaid
 graph TD
@@ -68,7 +68,7 @@ graph TD
     linkStyle 1 stroke:#0f172a,stroke-width:3px
 ```
 
-You add resilience at the *workflow* level, not in business functions. Your business functions stay clean. They return Results, and the workflow handles retries and timeouts.
+You add resilience at the workflow level. Your business functions stay clean: they return Results, and the workflow handles retries and timeouts.
 
 ---
 
@@ -121,7 +121,7 @@ They don't know about retries or timeouts. The workflow handles resilience.
 
 ### 1. Business Functions Stay Clean
 
-They do one thing: business logic. Resilience is handled at the workflow level.
+They do one thing: business logic. The workflow handles resilience.
 
 ### 2. Consistent Policy
 
@@ -143,7 +143,7 @@ By keeping retry at the workflow level, you avoid this explosion.
 
 **The Blast Radius Problem:** Without centralized retry policy, a minor blip in a downstream service can become a self-inflicted DDoS. If every layer retries 3×, and you have 3 layers, a single failure becomes 27 requests. Multiply by 100 concurrent users and you've created a retry storm that prevents the failing service from recovering.
 
-You add retries to make things more reliable. The database has a brief hiccup. Your retries kick in, all of them, at every layer, for every user. The database, already struggling, now receives 27× the normal load. It doesn't recover. It crashes harder. Your retries made the outage worse.
+You add retries to make things more reliable. The database has a brief hiccup, your retries kick in at every layer for every user, and the database, already struggling, receives 27× the normal load. Instead of recovering, it crashes harder. Your retries made the outage worse.
 
 ```mermaid
 graph TD
@@ -175,18 +175,18 @@ graph TD
 
 ## What About Non-Idempotent Operations?
 
-Good question. You noticed the example didn't retry writes:
+You noticed the example didn't retry writes:
 
 ```typescript
 saveUser: (user) => rawDb.saveUser(user),  // No retry
 ```
 
-**Never blindly retry non-idempotent operations.** A retry might:
+**Never retry non-idempotent operations by default.** A retry might:
 - Double-charge a credit card
 - Create duplicate records
 - Send multiple emails
 
-A customer complains: "I was charged twice for the same order." You check the logs. The payment succeeded on the first attempt, but the database write timed out before the response reached your server. Your retry logic thought it failed. It charged the card again. The customer paid $200 instead of $100, and you have two orders in the system for the same thing.
+A customer complains: "I was charged twice for the same order." You check the logs. The payment succeeded on the first attempt, but the database write timed out before the response reached your server. Your retry logic read that as a failure and charged the card again. The customer paid $200 instead of $100, and you have two orders in the system for the same thing.
 
 For writes, either:
 
@@ -198,7 +198,7 @@ For writes, either:
 
 ## Which Errors Should You Retry?
 
-Not all errors are retryable. Some are permanent failures -retrying won't help.
+Not all errors are retryable. Some are permanent failures where retrying won't help.
 
 | Error Type | Retry? | Why |
 | ---------- | ------ | --- |
@@ -227,7 +227,7 @@ const data = await step.retry(
 );
 ```
 
-Now permanent failures fail immediately instead of wasting time on doomed retries.
+Now permanent failures fail fast instead of wasting time on doomed retries.
 
 **Rule of thumb:** Retry infrastructure failures (network, timeout). Don't retry logic failures (not found, validation, auth).
 
@@ -249,7 +249,7 @@ const result = await workflow(async (step) => {
 });
 ```
 
-If the call takes longer than 2 seconds, it's aborted.
+If the call takes longer than 2 seconds, the workflow aborts it.
 
 With AbortSignal for cancellable operations:
 
@@ -264,7 +264,7 @@ const data = await step.withTimeout(
 
 ## Combining Retry and Timeout
 
-Combine retry and timeout - each attempt gets its own timeout:
+Combine retry and timeout so each attempt gets its own timeout:
 
 ```typescript
 const result = await workflow(async (step) => {
@@ -287,7 +287,7 @@ This ensures that:
 - If all 3 attempts timeout, the workflow fails
 - The total time is bounded (3 attempts × 2s = 6s max)
 
-**Important:** The timeout is *per attempt*, not for the entire retry block. If you need a global timeout for the whole operation, wrap everything in `step.withTimeout()`:
+**Important:** The timeout applies per attempt, not to the entire retry block. If you need a global timeout for the whole operation, wrap everything in `step.withTimeout()`:
 
 ```typescript
 // Global timeout: entire operation must complete in 10s
@@ -303,13 +303,13 @@ const data = await step.withTimeout(
 
 ## Connecting to Tracing
 
-Resilience events are automatically tracked in your traces when using OpenTelemetry. The workflow library emits events for:
+The workflow library records resilience events in your traces when you use OpenTelemetry. It emits events for:
 
 - `step_retry` - When a step is retried
 - `step_timeout` - When a step times out
 - `step_retries_exhausted` - When all retry attempts are exhausted
 
-Your traces show not just "this call failed" but "this call failed, retried 3 times, then succeeded."
+Your traces show more than "this call failed." They show "this call failed, retried 3 times, then succeeded."
 
 ### Recommended Defaults
 
@@ -326,7 +326,7 @@ Use these as starting points and tune based on your SLOs:
 **Notes:**
 
 - Writes default to 1 attempt (no retry) unless you have idempotency keys
-- Always set timeouts -never let operations hang indefinitely
+- Set timeouts so no operation hangs
 - Always use jitter for distributed systems (see below)
 
 ### Why Jitter Matters
@@ -359,7 +359,7 @@ step.retry(() => fetchData(), {
 
 If a dependency fails repeatedly, retries can make things worse. While the service is down, you're still sending requests (wasting resources) and delaying responses to users.
 
-**Circuit breakers** stop the bleeding. After N consecutive failures, the circuit "opens" and immediately rejects requests for a cooldown period. This:
+**Circuit breakers** stop the bleeding. After N consecutive failures, the circuit "opens" and rejects requests for a cooldown period. This:
 
 - Gives the failing service time to recover
 - Returns fast errors instead of slow timeouts
@@ -368,7 +368,7 @@ If a dependency fails repeatedly, retries can make things worse. While the servi
 `awaitly` includes `createCircuitBreaker` for protecting dependencies:
 
 ```typescript
-import { createCircuitBreaker, isCircuitOpenError } from 'awaitly/circuit-breaker';
+import { createCircuitBreaker, isCircuitOpenError } from 'awaitly/reliability';
 
 // Create a circuit breaker
 const apiBreaker = createCircuitBreaker('external-api', {
@@ -390,7 +390,7 @@ const result = await workflow(async (step) => {
 });
 ```
 
-The circuit breaker tracks failures and automatically opens when the threshold is exceeded, preventing cascading failures. When the circuit is open, calls fail fast instead of waiting for timeouts. The circuit automatically transitions to HALF_OPEN after the reset timeout to test if the service has recovered.
+The circuit breaker tracks failures and opens when they cross the threshold, preventing cascading failures. When the circuit is open, calls fail fast instead of waiting for timeouts. After the reset timeout, the circuit transitions to HALF_OPEN to test whether the service recovered.
 
 You can also access timeout metadata:
 
@@ -449,7 +449,7 @@ const result = await syncUserToProvider(async (step) => {
 
 **Default:** Retry at the workflow level using `step.retry()`.
 
-**Exception:** Retry operations only when idempotent and explicitly designed.
+**Exception:** Retry operations only when idempotent and designed for it.
 
 **Never:** Double-retry at multiple layers without explicit budget.
 
@@ -493,7 +493,7 @@ const result = await loadUser(async (step) => {
 });
 ```
 
-The business function `getUser` knows nothing about retries or timeouts. It just returns a Result. The workflow handles resilience at the composition level.
+The business function `getUser` knows nothing about retries or timeouts. It returns a Result. The workflow handles resilience at the composition level.
 
 ---
 
@@ -529,7 +529,7 @@ Each layer has a single responsibility:
 
 We've handled runtime concerns: functions, validation, errors, observability, resilience. But there's one more boundary: how your application starts.
 
-Environment variables are strings. They might be missing. They might be invalid. Where do you validate and type them?
+Environment variables are strings. They might be missing or invalid. Where do you validate and type them?
 
 ---
 

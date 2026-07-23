@@ -7,15 +7,15 @@ description: Orchestrate multi-step operations with sagas, parallel execution, b
 
 ---
 
-You've shipped checkout to production. A customer buys an item. Payment succeeds. Then your inventory service times out. The customer was charged but never got their order. Your database shows the payment, but no order record. Your support team spends 45 minutes reconciling the mess manually.
+You've shipped checkout to production. A customer buys an item. Payment succeeds. Then your inventory service times out. The customer was charged but never got their order. Your database shows the payment, but no order record. Your support team spends 45 minutes reconciling the mess by hand.
 
-Individual functions with Result types are great. But real operations span multiple services, databases, and external APIs. When one step fails in the middle, you have a consistency problem that error handling alone can't solve.
+Individual functions with Result types handle single failures well. Real operations span multiple services, databases, and external APIs. When one step fails in the middle, you have a consistency problem that error handling alone can't solve.
 
 ---
 
 ## The Sequential Trap
 
-Developers naturally chain async calls in a straight line, handling errors at the end:
+Developers chain async calls in a straight line, handling errors at the end:
 
 ```typescript
 async function checkout(
@@ -46,7 +46,7 @@ async function checkout(
 
 What happens when step 2 fails after step 1 succeeds?
 
-The customer is charged, but there's no order. The inventory was never reserved. You have money and no record of what it's for. The `catch` block doesn't help -it doesn't know which step succeeded before the failure.
+The customer is charged, but there's no order. The reservation never ran. You have money and no record of what it's for. The `catch` block doesn't help, since it doesn't know which step succeeded before the failure.
 
 ```mermaid
 graph LR
@@ -60,13 +60,13 @@ graph LR
 
 This code is honest about *individual* failures but silent about *partial* failures. What do you do when step 2 of 5 fails?
 
-The problem isn't exceptions -it's that the code doesn't record which side effects already happened. Without that, you can't reliably compensate, retry safely, or resume from a checkpoint.
+The problem is that the code doesn't record which side effects already happened. Without that, you can't compensate, retry, or resume from a checkpoint.
 
 ---
 
 ## Your First Workflow
 
-Let's start simple. `createWorkflow` gives you a structured way to compose Result-returning functions:
+`createWorkflow` gives you a structured way to compose Result-returning functions:
 
 ```typescript
 import { ok, err, type AsyncResult } from 'awaitly';
@@ -125,8 +125,8 @@ const result = await checkout(async (step, deps) => {
 The `step()` function accepts an async function returning `AsyncResult` (or a prebuilt step like an approval step). It:
 
 - Unwraps `ok` results and gives you the value
-- Short-circuits on `err` and returns immediately
-- Collects all possible error types automatically
+- Short-circuits on `err` and returns without running the rest
+- Collects all possible error types for you
 
 ```typescript
 // result.error is automatically typed as:
@@ -152,9 +152,9 @@ We've eliminated boilerplate and made error types explicit across steps. But we 
 
 ## When Failure Means Rollback: The Saga Pattern
 
-It's 6pm. Your on-call phone rings. A customer placed an order, got charged twice, and the order never shipped. You check the logs: the first payment succeeded, inventory check failed, retry charged again, and somehow the order creation threw an exception. There's no compensation logic. You spend 2 hours manually refunding and reconciling.
+Your on-call phone rings. A customer placed an order, got charged twice, and the order never shipped. You check the logs: the first payment succeeded, inventory check failed, retry charged again, and somehow the order creation threw an exception. There's no compensation logic. You spend 2 hours refunding and reconciling by hand.
 
-**Sagas solve this.** Each step declares both what to do AND what to undo. If any step fails, previous steps are compensated in reverse order.
+**Sagas solve this.** Each step declares both what to do and what to undo. If any step fails, the saga compensates previous steps in reverse order.
 
 ```typescript
 import { createSagaWorkflow, isSagaCompensationError } from 'awaitly/saga';
@@ -214,7 +214,7 @@ Compensation order (LIFO):
 2. refundPayment(payment.id)
 ```
 
-The customer gets refunded. Inventory is released. No orphaned charges.
+The customer gets refunded and inventory is released, with no orphaned charges.
 
 ```mermaid
 graph TD
@@ -246,7 +246,7 @@ graph TD
 
 ### Handling Compensation Errors
 
-What if compensation itself fails? The saga tracks it:
+If compensation itself fails, the saga tracks it:
 
 ```typescript
 if (!result.ok && isSagaCompensationError(result.error)) {
@@ -275,7 +275,7 @@ Compensations are **best-effort, not transactional**. Some actions cannot be und
 | **Safe** | Compensation must not cause additional harm (e.g., double-refunding) |
 | **Idempotent** | Running twice produces the same result (compensation itself may fail and retry) |
 | **Observable** | Log and emit metrics so you know when compensations run and whether they succeed |
-| **Alerting** | Failed compensations need human attention -don't silently swallow errors |
+| **Alerting** | Failed compensations need human attention; don't swallow errors |
 | **Bounded** | Consider timeouts; a hanging compensation blocks the saga's error path |
 | **Eventual** | Compensation success ≠ immediate effect (refunds may be "pending" for days) |
 
@@ -376,7 +376,7 @@ Even with idempotency keys, your system only "knows" a step completed if you rec
 
 1. **Actions must be idempotent** – The action itself (not just the API call) must handle re-execution safely
 2. **Compensation history isn't replayed** – Retrying a saga step re-runs the action, but if the saga later fails, compensation runs once (not once per retry)
-3. **Persist state after side-effecting steps** – If your workflow supports persisted state, save it immediately after a side-effecting step succeeds (this is your responsibility, not automatic)
+3. **Persist state after side-effecting steps** – If your workflow supports persisted state, save it as soon as a side-effecting step succeeds (this is your responsibility, not automatic)
 
 ```typescript
 // Dangerous: retry wrapper outside saga step tracking (multiple step events, confusing observability)
@@ -392,11 +392,11 @@ const payment = await saga.step(
 );
 ```
 
-When in doubt, make your actions idempotent at the domain level (check-then-act with database constraints) rather than relying solely on idempotency keys.
+When in doubt, make your actions idempotent at the domain level (check-then-act with database constraints) rather than relying on idempotency keys alone.
 
 ### Not Everything Needs Compensation
 
-Read operations and truly idempotent operations don't need compensation:
+Read operations and idempotent operations don't need compensation:
 
 ```typescript
 const orderSaga = createSagaWorkflow({
@@ -468,7 +468,7 @@ const reservation = await saga.step(
 );
 ```
 
-If the saga crashes without compensating, the lease expires automatically. No orphaned reservations.
+If the saga crashes without compensating, the lease expires on its own, leaving no orphaned reservations.
 
 2. **Make release idempotent and lease-aware:**
 
@@ -540,7 +540,7 @@ const result = await loadDashboard(async (step, deps) => {
 });
 ```
 
-`allAsync` is like `Promise.all` but for Results. If any operation fails, it short-circuits immediately.
+`allAsync` is like `Promise.all` but for Results. If any operation fails, it short-circuits.
 
 **Cancellation caveat:** "Fail-fast" means the workflow returns early, but in-flight requests may continue running (standard JavaScript Promise behavior). For side-effecting calls or rate-limited APIs, pass an `AbortSignal` to cancel abandoned work:
 
@@ -588,9 +588,9 @@ if (result.ok) {
 }
 ```
 
-**Note:** Unlike `Promise.allSettled()`, this returns a Result - `ok` if all succeed, `err` if any fail. This is consistent with awaitly's philosophy that all functions return Results.
+**Note:** Unlike `Promise.allSettled()`, this returns a Result: `ok` if all succeed, `err` if any fail. This is consistent with awaitly's philosophy that all functions return Results.
 
-Use it when you want to report all failures at once rather than stopping at the first error. For true "partial success" where you continue with whatever succeeded, check each result individually after using `Promise.allSettled()` directly.
+Use it when you want to report all failures at once rather than stopping at the first error. For true "partial success" where you continue with whatever succeeded, check each result after using `Promise.allSettled()`.
 
 ### Racing to First Success
 
@@ -648,7 +648,7 @@ Your migration script processes 50,000 user records. At record 47,000, your mach
 
 ```typescript
 import { ok, err } from 'awaitly';
-import { processInBatches, batchPresets } from 'awaitly/batch';
+import { processInBatches, batchPresets } from 'awaitly/workflow';
 
 const result = await processInBatches(
   users,  // Array of 50,000 users
@@ -697,7 +697,7 @@ await processInBatches(items, process, batchPresets.aggressive);
 Processing stops on the first error, with context about where it failed:
 
 ```typescript
-import { isBatchProcessingError } from 'awaitly/batch';
+import { isBatchProcessingError } from 'awaitly/workflow';
 
 if (!result.ok) {
   if (isBatchProcessingError(result.error)) {
@@ -741,14 +741,14 @@ The most robust pattern is idempotent processing + a "processed" marker or uniqu
 
 ## Human-in-the-Loop: Approval Workflows
 
-Refunds over $1000 require manager approval. The customer clicks 'refund', and... then what? The request sits in a database table. Someone checks the table manually. Sometimes they forget. Sometimes the refund is approved but the code to process it isn't connected to the approval system.
+Refunds over $1000 require manager approval. The customer clicks 'refund', and then nothing happens on its own. The request sits in a database table. Someone checks the table by hand. Sometimes they forget. Sometimes the refund is approved but the code to process it isn't connected to the approval system.
 
 With awaitly, approval is a first-class step:
 
 ```typescript
 import { createWorkflow, createResumeStateCollector } from 'awaitly/workflow';
 import { createApprovalStep, isPendingApproval } from 'awaitly/hitl';
-import { stringifyState } from 'awaitly/persistence';
+import { serializeResumeState } from 'awaitly/persistence';
 
 // Define the approval step (parameterized by refundId at runtime)
 const createRefundApprovalStep = (refundId: string) =>
@@ -797,7 +797,7 @@ if (!result.ok && isPendingApproval(result.error)) {
   // Save workflow state for later
   await db.pendingWorkflows.create({
     id: refundId,
-    state: stringifyState(collector.getResumeState()),
+    state: JSON.stringify(serializeResumeState(collector.getResumeState())),
   });
 
   // Notify the approver
@@ -811,11 +811,11 @@ When the manager approves:
 
 ```typescript
 import { injectApproval } from 'awaitly/hitl';
-import { parseState } from 'awaitly/persistence';
+import { deserializeResumeState } from 'awaitly/persistence';
 
 // Load saved state
 const saved = await db.pendingWorkflows.find(refundId);
-const state = parseState(saved.state);
+const state = deserializeResumeState(JSON.parse(saved.state));
 
 // Inject the approval
 const updatedState = injectApproval(state, {
@@ -833,7 +833,7 @@ const result = await workflow(async (step, deps) => {
 // Workflow continues from the approval step
 ```
 
-**Security considerations:** `injectApproval` is powerful -it lets code bypass the normal approval check. In production:
+**Security considerations:** `injectApproval` is powerful. It lets code bypass the normal approval check. In production:
 
 1. **Verify approver identity** – Ensure the approver is authorized for this approval type
 2. **Audit log all approvals** – Record who approved, when, and what workflow it affected
@@ -857,11 +857,11 @@ await auditLog.record({
 const updatedState = injectApproval(state, { /* ... */ });
 ```
 
-**Source of truth:** Treat your approvals table as the system of record -`injectApproval` only mutates workflow state for resumption. When an approver acts: write the decision to your database first, then inject and resume using that recorded decision. If your system crashes between inject and resume, the DB record lets you retry safely.
+**Source of truth:** Treat your approvals table as the system of record. `injectApproval` only mutates workflow state for resumption. When an approver acts: write the decision to your database first, then inject and resume using that recorded decision. If your system crashes between inject and resume, the DB record makes a safe retry possible.
 
 ### Testing Approval Workflows
 
-Don't wait for humans in tests -inject approvals using `injectApproval()` with `resumeState`:
+Don't wait for humans in tests. Inject approvals using `injectApproval()` with `resumeState`:
 
 ```typescript
 import { injectApproval } from 'awaitly/hitl';
@@ -889,7 +889,7 @@ const result = await workflow(async (step, deps) => {
 
 ### Durability Boundaries
 
-The `stringifyState` / `parseState` / `injectApproval` pattern saves **workflow execution state**, not your application's side effects. Understand what's persisted:
+The `serializeResumeState` / `deserializeResumeState` / `injectApproval` pattern saves **workflow execution state**, not your application's side effects. Understand what's persisted:
 
 **What IS persisted (via `collector.getResumeState()`):**
 - Which steps have completed
@@ -972,7 +972,7 @@ For long-running workflows, consider adding a `workflowVersion` field to your pe
 
 ## Combining Patterns
 
-These patterns compose naturally:
+These patterns compose:
 
 ```typescript
 const orderFulfillment = createSagaWorkflow({
@@ -1047,7 +1047,7 @@ const result = await orderFulfillment(async (saga, deps) => {
 
 ## The Rules
 
-1. **Use `createWorkflow` for linear composition.** Errors propagate automatically; the union of possible errors is inferred from the steps you call.
+1. **Use `createWorkflow` for linear composition.** Errors propagate on their own; awaitly infers the union of possible errors from the steps you call.
 
 2. **Use sagas when you need compensation.** Each step declares both action and undo. Compensations run in reverse order (LIFO).
 
@@ -1055,11 +1055,11 @@ const result = await orderFulfillment(async (saga, deps) => {
 
 4. **Persist state after each step for critical workflows.** Without checkpoints, a crash loses progress and may cause duplicate side effects on restart. For financial or long-running workflows, save `collector.getResumeState()` after every step completion.
 
-5. **Return minimal, stable values from steps.** Step return values are serialized into workflow state. Return IDs and small immutable data -not full objects, secrets, or PII.
+5. **Return minimal, stable values from steps.** awaitly serializes step return values into workflow state. Return IDs and small immutable data, not full objects, secrets, or PII.
 
 6. **Use parallel operations for independent calls.** `allAsync` for mandatory data; `allSettledAsync` when you need all errors reported. Add `step.retry()` and `step.withTimeout()` from [Resilience Patterns](..//resilience) when needed.
 
-7. **Respect rate limits with `processInBatches`.** Never overwhelm downstream systems. Use cursor-based checkpoints for resume capability.
+7. **Respect rate limits with `processInBatches`.** Avoid overwhelming downstream systems. Use cursor-based checkpoints for resume capability.
 
 8. **Make approval workflows testable.** Inject approvals in tests instead of waiting for humans.
 
@@ -1067,7 +1067,7 @@ const result = await orderFulfillment(async (saga, deps) => {
 
 ## What's Next
 
-We've built complex workflows that handle failures gracefully. But when something goes wrong in production, how do we trace what happened across all these steps?
+We've built workflows that handle failures across many steps. When something goes wrong in production, how do we trace what happened?
 
 Workflows emit events as they execute:
 
@@ -1088,7 +1088,7 @@ But raw events aren't enough. We need distributed traces that show the full pict
 
 How do we connect these events to our observability stack?
 
-But first, let's zoom out. We've been composing functions into workflows. There's a broader principle at play here - one that explains *why* this architecture works.
+But first, let's zoom out. We've been composing functions into workflows. A broader principle explains *why* this architecture works.
 
 ---
 

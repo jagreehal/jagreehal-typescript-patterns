@@ -7,7 +7,7 @@ description: Make failure explicit with Result types instead of throwing excepti
 
 ---
 
-Look at this function:
+Consider this function:
 
 ```typescript
 async function getUser(
@@ -22,9 +22,9 @@ async function getUser(
 
 What can fail here?
 
-If you look at the signature (`Promise<User>`) you'd think it always returns a user. But it doesn't. It might throw "User not found". It might throw a database error. The signature lies.
+The signature (`Promise<User>`) suggests it always returns a user. It might throw "User not found" or a database error instead, so the type misrepresents what the function does.
 
-You only discover the truth by reading the implementation. Or worse, by deploying to production and watching it crash.
+You discover the truth by reading the implementation, or by deploying to production and watching it crash.
 
 ---
 
@@ -43,15 +43,15 @@ async function processOrder(args, deps): Promise<Order> {
 }
 ```
 
-Which of these might fail? All of them? Some of them? What errors can they produce?
+Which of these might fail, and what errors can they produce?
 
-You can't tell from the code. The only way to know is to chase down every function and read its implementation. And hope they don't call other functions that throw.
+You can't tell from the code. You have to chase down every function, read its implementation, and hope none of them call other functions that throw.
 
-It's Friday afternoon. Production is failing. The error log says `Error: User not found`. You search the codebase: 47 places throw that exact message. Which one is it? The stack trace points to `processOrder` line 3, but that's the `getUser` call. You need to find which *internal* path threw. You spend 20 minutes reading code before finding the culprit.
+It's Friday afternoon and production is failing. The error log says `Error: User not found`. You search the codebase: 47 places throw that exact message. Which one is it? The stack trace points to `processOrder` line 3, but that's the `getUser` call. You need to find which *internal* path threw. You spend 20 minutes reading code before finding the culprit.
 
 ### 2. Throws Bypass Composition
 
-We've worked hard to make our functions composable. Clean deps, validated args. But exceptions break that.
+We've worked to make our functions composable, with clean deps and validated args. Exceptions break that.
 
 ```typescript
 // You want a linear flow
@@ -73,7 +73,7 @@ async function processUser(args, deps) {
 }
 ```
 
-You're not composing functions anymore. You're composing error handling.
+You end up composing error handling instead of functions.
 
 ### 3. Throws Conflate Different Failures
 
@@ -83,9 +83,9 @@ When `getUser` throws, what happened?
 - Database connection failed? (Infrastructure, maybe retry)
 - SQL syntax error? (Bug, should crash)
 
-They're all just `Error`. You have to inspect the message string or check `instanceof`, and hope the implementation is consistent.
+They're all `Error`. You inspect the message string or check `instanceof`, and hope the implementation is consistent.
 
-Your handler catches all exceptions and returns HTTP 500. But "user not found" isn't a server error -it's a 404. So you add string matching:
+Your handler catches all exceptions and returns HTTP 500. But "user not found" is a 404, not a 500. So you add string matching:
 
 ```typescript
 catch (error) {
@@ -95,15 +95,15 @@ catch (error) {
 }
 ```
 
-Months later, someone changes "not found" to "does not exist". Your 404s become 500s. String matching on error messages is fragile. But with exceptions, it's all you have.
+Months later, someone changes "not found" to "does not exist", and your 404s turn into 500s. String matching on error messages is fragile, but exceptions leave you no alternative.
 
-**This is why we never match on message strings.** Typed errors solve this.
+**Match on error types, not message strings.** Typed errors make that possible.
 
 ---
 
 ## Return Values Instead
 
-What if functions communicated failure through their return type?
+Functions can communicate failure through their return type instead:
 
 ```typescript
 async function getUser(
@@ -119,9 +119,9 @@ Now the signature tells the truth:
 - Success: you get a `User`
 - Failure: either `'NOT_FOUND'` or `'DB_ERROR'`
 
-No surprises. No hidden control flow. The type system documents what can go wrong.
+No hidden control flow, and the type system documents what can go wrong.
 
-Months later, someone adds a new error case: `'RATE_LIMITED'`. The type changes to `'NOT_FOUND' | 'DB_ERROR' | 'RATE_LIMITED'`. Every `switch` statement that handles these errors gets a TypeScript error: "Property 'RATE_LIMITED' is not handled." You can't forget to handle the new case. The compiler finds every call site.
+Months later, someone adds a new error case: `'RATE_LIMITED'`. The type changes to `'NOT_FOUND' | 'DB_ERROR' | 'RATE_LIMITED'`. Every `switch` statement that handles these errors gets a TypeScript error: "Property 'RATE_LIMITED' is not handled." You can't forget the new case, because the compiler flags every call site.
 
 ```mermaid
 graph LR
@@ -204,13 +204,13 @@ if (!result.ok) {
 console.log('Got user:', result.value.name);
 ```
 
-No hidden throws. The type system enforces that you handle both cases.
+No hidden throws, and the type system enforces that you handle both cases.
 
 ---
 
 ## "But That's So Verbose!"
 
-I hear you. Look at this:
+Fair concern. Consider this:
 
 ```typescript
 const userResult = await getUser({ userId }, deps);
@@ -227,17 +227,17 @@ return ok({ user: enrichedResult.value });
 
 Every step requires checking `.ok` and early returning on error. This is the "if err != nil" problem from Go.
 
-Can we do better?
+awaitly composes these checks away.
 
 ---
 
 ## Composing Results
 
-Here's where [awaitly](https://github.com/jagreehal/awaitly) comes in. It gives you workflow-style composition that looks almost like regular async code.
+[awaitly](https://github.com/jagreehal/awaitly) gives you workflow-style composition that reads like regular async code.
 
 ### `run()`: the default for multi-step flows
 
-Use `run()` for most multi-step flows. It keeps code flat, readable, and exits early on the first error:
+Use `run()` for most multi-step flows. It keeps code flat and exits early on the first error:
 
 ```typescript
 import { run } from 'awaitly/run';
@@ -254,9 +254,8 @@ No manual `if (!result.ok)` checks. The `step()` function:
 
 - Unwraps the Result if it's `ok`, giving you the value
 - Short-circuits the whole workflow if it's an error
-- No manual `if (!result.ok) return` checks needed
 
-This is called "railway-oriented programming". Your data travels along the happy track, and errors automatically switch to the error track.
+This is called "railway-oriented programming". Your data travels along the happy track, and errors switch to the error track.
 
 ```mermaid
 graph LR
@@ -320,7 +319,7 @@ const result = await loadUserData(async (step) => {
 
 What about code that throws? Like `JSON.parse` or third-party libraries?
 
-This is the real world. You've built a clean system of Results, but you still have to interact with code that throws: built-in functions, npm packages, legacy code. You need a **bridge** between the messy world of exceptions and your clean world of Results.
+You've built a clean system of Results, but you still interact with code that throws: built-in functions, npm packages, legacy code. You need a **bridge** between the messy world of exceptions and your clean Results.
 
 That's what `step.try()` is for:
 
@@ -397,7 +396,7 @@ const data = await tryAsync(
 
 ## The Day-to-Day Toolkit
 
-You've got `run()` for composition and `step.try()` for bridging throws. Here are the remaining helpers teams actually use:
+You've got `run()` for composition and `step.try()` for bridging throws. Here are the remaining helpers teams reach for:
 
 ### 1. `match()`: handle at boundaries
 
@@ -648,7 +647,7 @@ type AllErrors =
   // ... 20 more errors
 ```
 
-Your HTTP handler's `switch` statement becomes massive. But you don't actually need that granularity at every layer.
+Your HTTP handler's `switch` statement becomes massive, though you don't need that granularity at every layer.
 
 **Solution: Namespace errors at boundaries.** Keep detailed errors in your core logic (for tracing), but collapse them to categories at the HTTP layer:
 
@@ -674,11 +673,11 @@ function collapseToHttpError(error: DetailedError): HttpError {
 }
 ```
 
-**The principle:** Preserve detail for observability ([OpenTelemetry](..//opentelemetry) records the specific `DB_TIMEOUT`), but simplify for API consumers. Your traces show exactly what failed; your API returns clean categories.
+**The principle:** Preserve detail for observability ([OpenTelemetry](..//opentelemetry) records the specific `DB_TIMEOUT`), but simplify for API consumers. Your traces show what failed; your API returns clean categories.
 
 ---
 
-**What about transient failures?** Database connections dropping, HTTP timeouts, service hiccups? Those deserve their own treatment. We'll cover retry and timeout patterns in [Resilience Patterns](..//resilience).
+Transient failures need their own treatment: database connections dropping, HTTP timeouts, service hiccups. We'll cover retry and timeout patterns in [Resilience Patterns](..//resilience).
 
 ---
 
@@ -767,7 +766,7 @@ graph TD
     linkStyle 2 stroke:#0f172a,stroke-width:3px
 ```
 
-Exceptions bubble up from infrastructure, get caught and converted to Results, and flow through your business logic explicitly.
+Exceptions bubble up from infrastructure, where your code catches and converts them to Results that flow through your business logic explicitly.
 
 ---
 
@@ -897,7 +896,7 @@ app.get('/users/:id', async (req, res) => {
 
 **What makes this clean:**
 - Errors carry context (userId, operation, resource)
-- `TaggedError.match()` is exhaustive - add a new error type and TypeScript errors until you handle it
+- `TaggedError.match()` is exhaustive: add a new error type and TypeScript errors until you handle it
 - No verbose switch statements
 - Stack traces work properly for debugging
 
@@ -916,9 +915,9 @@ app.get('/users/:id', async (req, res) => {
 
 ## What's Next
 
-In this chapter we focused on typed failure and composition ergonomics, making your code honest about what can go wrong.
+You now have typed failure and composition ergonomics that make your code honest about what can go wrong.
 
-Next, we'll focus on business workflows: retries, timeouts, parallelism, compensation, and rollback. What happens when step 2 of 5 fails? How do you undo what already succeeded?
+Next comes business workflows: retries, timeouts, parallelism, compensation, and rollback. What happens when step 2 of 5 fails, and how do you undo what already succeeded?
 
 ---
 

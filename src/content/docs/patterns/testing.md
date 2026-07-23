@@ -1,11 +1,9 @@
 ---
 title: Why This Pattern Exists
-description: Learn why testability drives design and how explicit dependency injection makes testing simpler than vi.mock.
+description: Why testability drives design and how explicit dependency injection makes testing simpler than vi.mock.
 ---
 
-Before we talk about functions, dependency injection, or architecture, let's talk about tests.
-
-Because that's where the pain starts.
+Before we talk about functions, dependency injection, or architecture, let's talk about tests, where the pain starts.
 
 ---
 
@@ -18,7 +16,7 @@ TypeError: Cannot read property 'mockResolvedValue' of undefined
     at Object.<anonymous> (/tests/UserService.test.ts:42:18)
 ```
 
-You didn't change the test. You didn't change `UserService`. You *renamed a folder*.
+You didn't change the test or `UserService`. You *renamed a folder*.
 
 Now you're debugging test infrastructure instead of shipping features.
 
@@ -71,7 +69,7 @@ describe('UserService', () => {
 });
 ```
 
-This looks reasonable. But there are hidden problems.
+This looks reasonable, but it hides problems.
 
 ---
 
@@ -83,7 +81,7 @@ This looks reasonable. But there are hidden problems.
 vi.mock('./Database');
 ```
 
-That string `'./Database'` must exactly match the import path in your source file. Refactor the folder structure? Tests break. Move a file? Tests break. The mock is coupled to the module's path, not its behavior.
+That string `'./Database'` must match the import path in your source file. Refactor the folder structure and the tests break. Move a file and they break again. The mock is coupled to the module's path, not its behavior.
 
 ### 2. Hoisting Magic
 
@@ -98,13 +96,13 @@ vi.mock('./Database', () => ({
 
 ...doesn't work how it looks. The `vi.mock` runs *before* `const mockFn = vi.fn()`. You end up fighting JavaScript execution order with Vitest-specific hoisting rules.
 
-You read the docs. You try `vi.hoisted()`. You add workarounds. Then a coworker asks "why is our test setup so complicated?" and you don't have a good answer.
+You read the docs, try `vi.hoisted()`, and add workarounds. Then a coworker asks "why is our test setup so complicated?" and you don't have a good answer.
 
 ### 3. Global State
 
 Mocks are global by default. One test's mock can leak into another. You need `vi.clearAllMocks()` or `vi.resetAllMocks()` in `beforeEach`, and you have to remember which one clears what.
 
-Your test passes locally. It fails in CI. You add `--runInBand` to run tests sequentially. The test takes 3x longer but at least it's consistent. You've traded correctness for performance because of invisible shared state.
+Your test passes locally but fails in CI. You add `--runInBand` to run tests sequentially. The test takes 3x longer but at least it's consistent. You've traded correctness for performance because of invisible shared state.
 
 ### 4. Type Erosion
 
@@ -211,7 +209,7 @@ All of these issues stem from the same root cause: dependencies are implicit and
 
 ## A Different Approach
 
-What if dependencies were just arguments?
+Dependencies can be arguments.
 
 ```mermaid
 graph LR
@@ -288,9 +286,9 @@ describe('createUser', () => {
 });
 ```
 
-No `vi.mock`. No hoisting. No path coupling. No global state.
+No `vi.mock`, no hoisting, no path coupling, no global state.
 
-The mock is just an object you pass in. If the function needs different deps, you pass different deps. Each test is independent.
+The mock is an object you pass in. If the function needs different deps, you pass different deps. Each test is independent.
 
 ---
 
@@ -324,13 +322,13 @@ it('creates a user and sends welcome email', async () => {
 
 **Why this matters:** If any section grows too large, it signals a problem. A bloated Arrange section suggests the test is too complex or testing too many things. Multiple unrelated assertions indicate you're verifying more than one behavior.
 
-The `fn(args, deps)` pattern naturally keeps Arrange simple. You're just creating an object with mock functions, not orchestrating module mocking magic.
+The `fn(args, deps)` pattern keeps Arrange simple. You create an object with mock functions instead of orchestrating module mocking magic.
 
 ---
 
 ## Even Better: vitest-mock-extended
 
-Manually creating mock objects works, but you lose type safety. What if you forget a method? What if the interface changes?
+Creating mock objects by hand works, but you lose type safety. If you forget a method or the interface changes, nothing warns you.
 
 [vitest-mock-extended](https://github.com/eratio08/vitest-mock-extended) gives you typed mocks:
 
@@ -360,7 +358,7 @@ describe('createUser', () => {
 - Each method is a `vi.fn()` mock
 - TypeScript enforces the shape
 
-If you rename `sendWelcome` to `sendWelcomeEmail` in your deps type, the test fails to compile. No runtime surprises.
+If you rename `sendWelcome` to `sendWelcomeEmail` in your deps type, the test fails to compile, with no runtime surprises.
 
 ---
 
@@ -379,7 +377,7 @@ This is the core insight that drives everything in this series. When you structu
 - **Dependencies are visible.** You can see what a function needs.
 - **Composition is natural.** Functions are just functions.
 
-If you like this pattern, you can even enforce it automatically. [eslint-plugin-prefer-object-params](https://github.com/jagreehal/eslint-plugin-prefer-object-params) flags functions with multiple positional parameters. More on that in the next post.
+If you like this pattern, you can even enforce it. [eslint-plugin-prefer-object-params](https://github.com/jagreehal/eslint-plugin-prefer-object-params) flags functions with multiple positional parameters. More on that in the next post.
 
 ### Classes Aren't Evil, Hidden State Is
 
@@ -389,13 +387,13 @@ This isn't "classes bad, functions good." Classes can still work if they're:
 - **IO-free.** They don't reach out to databases or APIs directly.
 - **Delegating.** They call pure functions that do the real work.
 
-The problem isn't the `class` keyword. It's when classes accumulate hidden state, implicit dependencies, and methods that secretly share everything through `this`. The `fn(args, deps)` pattern makes it *harder* to do that by accident. More on this in [Functions Over Classes](..//functions).
+The problem comes when classes accumulate hidden state, implicit dependencies, and methods that share state through `this`. The `fn(args, deps)` pattern makes it *harder* to do that by accident. More on this in [Functions Over Classes](..//functions).
 
 ---
 
 ## Unit Tests vs Integration Tests
 
-So far we've talked about mocking deps for unit tests. But what about tests that need a real database? Real HTTP calls? Real file systems?
+So far we've mocked deps for unit tests. Some tests need a real database, real HTTP calls, or a real file system.
 
 You need both:
 
@@ -419,14 +417,15 @@ Configure Vitest to load test-specific environment variables:
 ```typescript
 // vitest.config.ts
 import dotenv from 'dotenv';
-import tsconfigPaths from 'vite-tsconfig-paths';
 import { defineConfig } from 'vitest/config';
 
 // Load test-specific env before anything else
 dotenv.config({ path: '.env.test', override: true });
 
 export default defineConfig({
-  plugins: [tsconfigPaths()],
+  resolve: {
+    tsconfigPaths: true, // opt-in; default is false
+  },
   test: {
     globals: true,
     environment: 'node',
@@ -443,9 +442,9 @@ DATABASE_URL="postgresql://test:test@localhost:5432/orders_test"
 
 ### Database Guardrails: Never Hit Production
 
-Here's a nightmare scenario: you run tests, they pass, but they just deleted your production data. The test environment loaded the wrong `.env` file.
+A nightmare scenario: you run tests, they pass, and they delete your production data because the test environment loaded the wrong `.env` file.
 
-**Add a guardrail that throws if tests try to connect to anything other than localhost.** Put this in a Vitest setup file so it runs before any test, even if the test doesn't directly import the database:
+**Add a guardrail that throws if tests try to connect to anything other than localhost.** Put this in a Vitest setup file so it runs before any test, even if the test doesn't import the database:
 
 ```typescript
 // vitest.config.ts
@@ -493,13 +492,13 @@ if (
 export default prisma;
 ```
 
-Now if someone accidentally runs tests with production credentials, they get:
+Now if someone runs tests with production credentials, they get:
 
 ```text
 Error: Tests must use localhost database. Got: postgresql://prod-user:***@rds.amazonaws.com/orders
 ```
 
-The setup file catches it before any test runs -even tests that don't import the database directly. Crisis averted.
+The setup file catches it before any test runs, even in tests that don't import the database.
 
 ### Mocking Prisma for Unit Tests
 
@@ -572,7 +571,7 @@ describe('getOrder', () => {
 });
 ```
 
-No database connection. Tests run in milliseconds. And TypeScript ensures you're mocking the right methods with the right types.
+No database connection, and tests run in milliseconds. TypeScript ensures you mock the right methods with the right types.
 
 ### Test Stubs with Faker
 
@@ -771,7 +770,7 @@ const items = [stubs.orderItem({ orderId: order.id })];
 | Unit | `*.test.ts` | Mock | Fast (ms) | Business logic, error paths, edge cases |
 | Integration | `*.test.int.ts` | Real (localhost) | Slower (s) | Database queries, API endpoints, full workflows |
 
-**Unit tests** verify your functions work correctly in isolation. They're fast because they mock everything.
+**Unit tests** verify your functions work in isolation. They're fast because they mock everything.
 
 **Integration tests** verify the whole stack works together. They're slower but catch issues mocks would miss: database constraints, transaction behavior, query performance.
 
@@ -781,9 +780,9 @@ A healthy test suite has many fast unit tests and fewer slower integration tests
 
 ## What's Next
 
-It all starts with testing. If your code is hard to test, something's wrong with the structure. Testability isn't a nice-to-have. It's a design signal.
+It all starts with testing. If your code is hard to test, the structure is wrong. Testability is a design signal.
 
-But we've only covered testing infrastructure you control. What about external services (payment providers, email services, third-party APIs)?
+So far we've covered testing infrastructure you control. External services (payment providers, email services, third-party APIs) need a different approach.
 
 Let's continue: [Testing External Infrastructure](../testing-external-services)
 

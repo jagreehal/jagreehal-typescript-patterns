@@ -1,6 +1,6 @@
 ---
 title: React Architecture Guide
-description: A definitive, framework-agnostic React guide with concrete examples for responsibilities, state, data, DI, Storybook, testing, MSW, React Query, error boundaries, and essential ESLint rules.
+description: A framework-agnostic React guide with examples for responsibilities, state, data, DI, Storybook, testing, MSW, React Query, error boundaries, and ESLint rules.
 ---
 
 This guide is **framework-agnostic**. It applies to **Next.js**, **TanStack Start**, **Astro (SSR)**, **Remix**, **Vite SPA**, etc.
@@ -59,7 +59,7 @@ The goal: **keep reusable React code independent of routing/rendering frameworks
 
 ### The Adapter Layer: Portable Framework APIs
 
-Teams still accidentally couple to `useRouter`, `navigate`, `notFound`, etc. because there's no explicit adapter surface. Define framework-agnostic interfaces and implement them at the boundary:
+Teams still couple to `useRouter`, `navigate`, `notFound`, etc. because there's no explicit adapter surface. Define framework-agnostic interfaces and implement them at the boundary:
 
 ```ts
 // lib/platform/ports.ts -framework-agnostic ports
@@ -785,7 +785,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 - If your framework supports SSR/RSC/prefetch, do it at the boundary.
 - The reusable code still uses the same React Query key conventions and hooks.
-- Hydration is wiring, not architecture.
+- Hydration is wiring.
 
 ```tsx
 // Next.js App Router example: prefetch at the route boundary
@@ -833,6 +833,91 @@ function UserProfileClient({ userId }: { userId: string }) {
 ```
 
 ---
+
+## Eliminating Waterfalls
+
+Sequential `await` is the most common performance bug. When two operations don't depend on each other, run them together. This is a 2x to 10x win.
+
+```ts
+// ❌ BAD: three sequential round trips
+const user = await fetchUser(id);
+const posts = await fetchPosts(id);
+const prefs = await fetchPrefs(id);
+
+// ✅ GOOD: one round trip
+const [user, posts, prefs] = await Promise.all([
+  fetchUser(id),
+  fetchPosts(id),
+  fetchPrefs(id),
+]);
+```
+
+For partial dependencies, start each promise as early as possible and await at the end. No extra library needed.
+
+```ts
+// ✅ profile depends on user; config is independent
+const userPromise = fetchUser(id);
+const profilePromise = userPromise.then((u) => fetchProfile(u.id));
+
+const [user, config, profile] = await Promise.all([
+  userPromise,
+  fetchConfig(),
+  profilePromise,
+]);
+```
+
+The same rule holds anywhere you await: route handlers, server actions, loaders, and query functions. Start work immediately, await late.
+
+```ts
+// ❌ config waits for auth; data waits for both
+const session = await auth();
+const config = await fetchConfig();
+const data = await fetchData(session.userId);
+
+// ✅ auth and config fly in parallel
+const sessionPromise = auth();
+const configPromise = fetchConfig();
+const session = await sessionPromise;
+const [config, data] = await Promise.all([configPromise, fetchData(session.userId)]);
+```
+
+### Defer await until the branch needs it
+
+Don't await data that a branch may never use. Check cheap synchronous conditions first.
+
+```ts
+// ❌ BAD: fetches permissions even when the resource is missing
+async function updateResource(resourceId: string, userId: string) {
+  const permissions = await fetchPermissions(userId);
+  const resource = await getResource(resourceId);
+  if (!resource) return { error: 'Not found' };
+  if (!permissions.canEdit) return { error: 'Forbidden' };
+  return updateResourceData(resource, permissions);
+}
+
+// ✅ GOOD: cheap check first, fetch only when the path needs it
+async function updateResource(resourceId: string, userId: string) {
+  const resource = await getResource(resourceId);
+  if (!resource) return { error: 'Not found' };
+  const permissions = await fetchPermissions(userId);
+  if (!permissions.canEdit) return { error: 'Forbidden' };
+  return updateResourceData(resource, permissions);
+}
+```
+
+The same rule applies to feature flags. Guard the async call with the cheap condition.
+
+```ts
+// ❌ pays for the flag lookup every time
+const flag = await getFlag();
+if (flag && isWeekend) { /* ... */ }
+
+// ✅ skips the network call when isWeekend is false
+if (isWeekend) {
+  const flag = await getFlag();
+  if (flag) { /* ... */ }
+}
+```
 
 ## Loading States + Suspense
 
@@ -887,6 +972,42 @@ function UserListContainer() {
       <UserListView users={data ?? []} />
     </div>
   );
+}
+```
+
+### Respect reduced motion
+
+Users who set `prefers-reduced-motion` get vestibular relief. Animate `transform` and `opacity` only, and gate non-essential motion.
+
+- Set the Tailwind `motion-safe:` variant on decorative animation (`animate-pulse`, spinners, transitions).
+- Never use `transition: all`. List the properties (`transition-colors`, `transition-transform`).
+- For JS-driven motion, read the query and branch.
+
+```tsx
+// Skeleton stays visible but stops pulsing for reduced-motion users
+function UserCardSkeleton() {
+  return (
+    <div className="motion-safe:animate-pulse rounded-lg border p-4">
+      <div className="h-4 w-3/4 rounded bg-gray-200" />
+      <div className="mt-2 h-3 w-1/2 rounded bg-gray-200" />
+    </div>
+  );
+}
+
+// hooks/useReducedMotion.ts reuses the useMediaQuery primitive
+export function useReducedMotion() {
+  return useMediaQuery('(prefers-reduced-motion: reduce)');
+}
+```
+
+Global fallback for third-party animation you don't control:
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 ```
 
@@ -1135,7 +1256,7 @@ function DashboardPage() {
 Since you're mandating both Suspense and boundaries, understand the key gotchas:
 
 1. **Suspense only handles "pending", not "error".** You still need an ErrorBoundary around Suspense subtrees
-2. **React Query suspense mode throws during render.** Errors are caught by ErrorBoundary (good), but you need to reset queries when retrying
+2. **React Query suspense mode throws during render.** ErrorBoundary catches them (good), but you need to reset queries when retrying
 
 The canonical pattern:
 
@@ -1167,7 +1288,7 @@ function DataWidget() {
 }
 ```
 
-The `QueryErrorResetBoundary` ensures that when the user clicks "retry", the failed queries refetch instead of immediately re-throwing.
+The `QueryErrorResetBoundary` ensures that when the user clicks "retry", the failed queries refetch instead of re-throwing.
 
 ---
 
@@ -1177,14 +1298,14 @@ Components should accept typed "capabilities" via props, not imports of concrete
 
 ### The Distinction: handlers vs deps
 
-Without a hard rule, teams will mix these inconsistently. Here's the pattern that scales:
+Without a hard rule, teams mix these. This pattern scales:
 
 | Prop      | Purpose                                    | Examples                                    |
 |-----------|--------------------------------------------|---------------------------------------------|
 | `handlers` | User-intent callbacks (UI events)          | `onDelete`, `onEdit`, `onSubmit`, `onSelect` |
 | `deps`     | Capabilities/services (platform features)   | `nav`, `toast`, `track`, `clipboard`, `time` |
 
-**Why this matters:** Storybook can provide dumb stubs for `deps`, while tests assert `handlers` calls. The split also makes it clear which props are "what happens" (handlers) vs "what tools exist" (deps).
+Storybook provides dumb stubs for `deps`, while tests assert `handlers` calls. The split shows which props are "what happens" (handlers) vs "what tools exist" (deps).
 
 ```tsx
 // Full DI pattern with both handlers and deps
@@ -1487,7 +1608,7 @@ Extract a hook when:
 2. **Complexity.** A component's logic is hard to follow
 3. **Testing.** You want to test the logic separately from the UI
 
-Don't extract a hook just to "organize code." If it's only used once and the component is readable, leave it inline.
+Don't extract a hook to "organize code." If it's only used once and the component is readable, leave it inline.
 
 ### Naming Conventions
 
@@ -1501,7 +1622,7 @@ Don't extract a hook just to "organize code." If it's only used once and the com
 
 ### Primitive Hooks (Reusable Utilities)
 
-These are small, focused, and widely reusable:
+These are small, focused, and reusable:
 
 ```tsx
 // hooks/useDebounce.ts
@@ -1574,7 +1695,7 @@ const isMobile = useMediaQuery('(max-width: 768px)');
 
 ### Composition Pattern
 
-Compose primitive hooks into feature-specific hooks. **Note:** Framework-aware logic (like reading URL params) should be injected as deps, not imported -this keeps hooks portable and testable:
+Compose primitive hooks into feature-specific hooks. **Note:** Framework-aware logic (like reading URL params) should be injected as deps, not imported. This keeps hooks portable and testable:
 
 ```tsx
 // hooks/useSearchFilter.ts -composes primitives, accepts deps
@@ -2140,6 +2261,121 @@ function CreateUserForm({ onSubmit, isSubmitting, serverError }: CreateUserFormP
 
 ---
 
+### Input types, autocomplete, and inputmode
+
+Give the browser and password managers what they need. This is free UX: correct keyboards on mobile, autofill, and fewer typos.
+
+- Use the specific `type`: `email`, `tel`, `url`, `number`. Add `inputMode` for the on-screen keyboard.
+- Set a meaningful `autoComplete` token on identity fields (`email`, `name`, `tel`, `current-password`, `new-password`, `one-time-code`).
+- Turn off `spellCheck` on emails, usernames, and codes.
+- Never block paste. Users paste one-time codes and passwords.
+
+```tsx
+<FormField label="Email" name="email" error={errors.email}>
+  <input
+    id="email"
+    type="email"
+    inputMode="email"
+    autoComplete="email"
+    spellCheck={false}
+    placeholder="you@example.com"
+    {...register('email')}
+    aria-invalid={!!errors.email}
+  />
+</FormField>
+
+<FormField label="Verification code" name="otp" error={errors.otp}>
+  <input
+    id="otp"
+    inputMode="numeric"
+    autoComplete="one-time-code"
+    spellCheck={false}
+    {...register('otp')}
+  />
+</FormField>
+```
+
+### Associate errors with their field
+
+`role="alert"` announces an error once, but a screen reader landing on the input later won't know it's invalid or why. Wire `aria-describedby` to the message id.
+
+```tsx
+export function FormField({ label, name, error, children }: FormFieldProps) {
+  const errorId = `${name}-error`;
+  return (
+    <div className="space-y-1">
+      <label htmlFor={name} className="block text-sm font-medium">
+        {label}
+      </label>
+      {/* children pass aria-describedby={error ? errorId : undefined} + aria-invalid */}
+      {children}
+      {error && (
+        <p id={errorId} role="alert" className="text-sm text-red-600">
+          {error.message}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Input wires the describedby so the field announces its own error
+<input
+  id="email"
+  {...register('email')}
+  aria-invalid={!!errors.email}
+  aria-describedby={errors.email ? 'email-error' : undefined}
+/>
+```
+
+### Focus the first error, announce the result
+
+On a failed submit, keyboard and screen-reader users need to be taken to the problem, and the outcome needs to be spoken.
+
+- React Hook Form's `shouldFocusError` (on by default) focuses the first invalid registered field. Keep it on, and make sure custom controls forward their `ref` so focus lands.
+- Wrap the form-level success or error banner in an `aria-live` region so it's announced without stealing focus.
+
+```tsx
+const { handleSubmit, setError, formState: { errors, isSubmitting } } =
+  useForm<RegistrationData>({
+    resolver: zodResolver(registrationSchema),
+    shouldFocusError: true, // default; focuses the first invalid field
+  });
+
+return (
+  <form onSubmit={handleSubmit(onSubmit)} noValidate>
+    <div aria-live="polite" className="sr-only">
+      {isSubmitting ? 'Submitting…' : ''}
+    </div>
+
+    {errors.root && (
+      <div role="alert" className="mb-4 rounded bg-red-50 p-3 text-red-700">
+        {errors.root.message}
+      </div>
+    )}
+    {/* fields… */}
+  </form>
+);
+```
+
+For a global toast system, mount one `aria-live="polite"` region at the app root so every toast is announced. A toast that only renders visually is invisible to screen readers.
+
+### Guard against losing unsaved work
+
+A dirty form plus an accidental back button or tab close loses user input. Warn before it happens.
+
+```tsx
+const { formState: { isDirty, isSubmitting } } = useForm(/* ... */);
+
+useEffect(() => {
+  if (!isDirty || isSubmitting) return;
+  const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+  window.addEventListener('beforeunload', warn);
+  return () => window.removeEventListener('beforeunload', warn);
+}, [isDirty, isSubmitting]);
+```
+
+`beforeunload` covers tab close and reload. For in-app route changes, use your router's navigation-blocking API (injected as a dep, per the adapter pattern) so this stays framework-agnostic.
+
 ## React Server Components (RSC)
 
 > **Note:** This section applies to frameworks that support RSC (Next.js App Router, etc.). **If your framework doesn't support RSC (Vite SPA, CRA, older Next.js), skip this section.** The Container/View pattern from earlier sections is your model. RSC just moves the Container to the server.
@@ -2307,6 +2543,65 @@ export default function ProductsLoading() {
 }
 ```
 
+### Parallel Fetching in Server Components
+
+Server Components render depth-first, so a parent's `await` blocks its siblings. Push each fetch into the component that needs it so they run at once.
+
+```tsx
+// ❌ BAD: Sidebar can't start until Page's fetch resolves
+export default async function Page() {
+  const header = await fetchHeader();
+  return <div><Header data={header} /><Sidebar /></div>;
+}
+
+// ✅ GOOD: siblings fetch in parallel
+async function Header() { return <div>{await fetchHeader()}</div>; }
+async function Sidebar() { return <nav>{(await fetchSidebarItems()).map(renderItem)}</nav>; }
+export default function Page() {
+  return <div><Header /><Sidebar /></div>;
+}
+```
+
+For nested fetches, chain inside each item's promise so one slow item doesn't stall the rest.
+
+```ts
+// ❌ BAD: all authors wait for the slowest chat
+const chats = await Promise.all(ids.map(getChat));
+const authors = await Promise.all(chats.map((c) => getUser(c.author)));
+
+// ✅ GOOD: each item chains independently
+const authors = await Promise.all(ids.map((id) => getChat(id).then((c) => getUser(c.author))));
+```
+
+To show the shell before data lands, wrap the async child in `Suspense` instead of awaiting in the parent.
+
+```tsx
+export default function Page() {
+  return (
+    <div>
+      <Header />
+      <Suspense fallback={<Skeleton />}><DataDisplay /></Suspense>
+      <Footer />
+    </div>
+  );
+}
+```
+
+Deduplicate per request with `React.cache()`. Auth checks and DB queries called from multiple components then run once per request.
+
+```ts
+import { cache } from 'react';
+
+export const getCurrentUser = cache(async () => {
+  const session = await auth();
+  return session ? db.user.findUnique({ where: { id: session.userId } }) : null;
+});
+```
+
+Pass primitive args, not inline objects. `cache` compares with `Object.is`, so `getUser({ id: 1 })` misses every time. Use `getUser(1)`. Pass the minimum data across a `'use client'` boundary too, since large payloads inflate the serialized stream.
+
+> **Framework note:** Next.js already memoizes `fetch` per request. `React.cache()` covers the non-fetch work: DB queries, auth, file reads.
+
 ### RSC + React Query
 
 > **When to use each:** Server Components fetch directly (no React Query needed). React Query is for client-side cache, mutations, and real-time updates.
@@ -2447,9 +2742,60 @@ export function Button({
 
 ---
 
+### Hit targets and touch
+
+Interactive controls need a 44x44px minimum touch target (WCAG 2.5.5). The `sm` (32px) and `icon` (40px) button sizes above fall short on touch devices.
+
+- Give touch-first controls `min-h-11 min-w-11` (44px) even when the visual is smaller. Pad the hit area, not the ink.
+- Apply `touch-action: manipulation` to remove the 300ms double-tap-zoom delay on tap targets.
+- Icon-only controls keep the box square and at least 44px.
+
+```tsx
+// Icon button with a real hit target and an accessible name
+<button
+  aria-label="Delete user"
+  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md
+             touch-manipulation hover:bg-gray-100
+             focus-visible:outline-none focus-visible:ring-2"
+>
+  <TrashIcon aria-hidden="true" className="h-5 w-5" />
+</button>
+```
+
+For dense desktop UIs where 44px is too large, keep the visual small but expand the pressable area with padding or a `::before` overlay rather than shrinking the target.
+
+### Icon-only buttons need a name
+
+An icon button with no text is unlabeled to screen readers. Every `size="icon"` button requires `aria-label`, and its icon must be `aria-hidden`.
+
+```tsx
+<Button size="icon" aria-label="Close dialog">
+  <XIcon aria-hidden="true" className="h-5 w-5" />
+</Button>
+```
+
+Decorative icons that sit next to a text label take `aria-hidden="true"` so they aren't announced twice.
+
+### Handle long content
+
+User content is short, average, or absurdly long. Design for all three (the `LongName` story exists to catch this).
+
+- Single line: `truncate`. Multi-line: `line-clamp-2`. Free text: `break-words`.
+- A flex child won't shrink to truncate unless it has `min-w-0`. This is the most common truncation bug.
+
+```tsx
+<div className="flex items-center gap-3">
+  <Avatar />
+  <div className="min-w-0">           {/* lets the text shrink */}
+    <p className="truncate font-medium">{user.name}</p>
+    <p className="truncate text-sm text-gray-600">{user.email}</p>
+  </div>
+</div>
+```
+
 ## Show Don't Tell: Storybook-First Development
 
-> **Philosophy:** Get feature flows working in Storybook before wiring to real backends. Shorter inspect-and-adapt loops. Faster feedback cycles. Stakeholders can see working UI before the API exists.
+> **Philosophy:** Get feature flows working in Storybook before wiring to real backends. Shorter inspect-and-adapt loops and faster feedback cycles. Stakeholders can see working UI before the API exists.
 
 ### Why Storybook-First?
 
@@ -2961,7 +3307,7 @@ describe('MultiStepForm', () => {
 
 ### MSW: Required for Storybook and Integration Tests
 
-MSW is not optional -it's how we get deterministic stories and tests.
+MSW is not optional. It's how we get deterministic stories and tests.
 
 | Use Case | MSW Role |
 | -------- | -------- |
@@ -3182,6 +3528,46 @@ export function Dialog({ isOpen, onClose, title, children }: DialogProps) {
 }
 ```
 
+### Custom menus and popovers
+
+Native `<dialog>` gives you focus trapping and Escape for free. Custom overlays (dropdowns, menus, comboboxes) get none of it. Building one, you owe:
+
+- Escape closes and returns focus to the trigger.
+- Arrow keys move between items; Enter and Space activate.
+- Click outside closes.
+- Roving `tabindex` or `aria-activedescendant`, plus roles (`role="menu"`, `role="menuitem"`).
+
+Prefer a headless primitive (Radix, React Aria, Headless UI) over hand-rolling this. They ship the keyboard model, focus management, and ARIA correctly. Hand-roll only a trivial toggle:
+
+```tsx
+function Popover({ trigger, children }: PopoverProps) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const close = () => {
+    setOpen(false);
+    triggerRef.current?.focus(); // return focus to the trigger
+  };
+
+  return (
+    <div onKeyDown={(e) => e.key === 'Escape' && close()}>
+      <button ref={triggerRef} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        {trigger}
+      </button>
+      {open && <div role="dialog" className="absolute mt-2">{children}</div>}
+    </div>
+  );
+}
+```
+
+### Contrast
+
+Body text needs 4.5:1 against its background. Large text (24px or more, or 19px bold) and UI boundaries need 3:1.
+
+- `text-gray-400` on white is about 2.8:1. Use it only for large or decorative text, never for meaningful body copy. Drop muted body text to `text-gray-600` or `text-gray-700`.
+- Placeholder text is not a label. It fails contrast and disappears on input. Keep a real `<label>`.
+- Hover, active, and focus states must be more prominent than rest, not less.
+
 ### Example: Accessible Loading State
 
 ```tsx
@@ -3215,6 +3601,60 @@ function DataTable({ isLoading, data }: DataTableProps) {
 ```
 
 ---
+
+## Bundle Size
+
+### Avoid barrel imports
+
+Barrel files (an `index.ts` doing `export *`) pull thousands of unused modules into your graph. Icon and component libraries ship up to 10,000 re-exports. Importing them costs 200ms to 800ms on every cold start and slows HMR.
+
+```tsx
+// ❌ BAD: loads the whole library
+import { Check, X, Menu } from 'lucide-react';
+import { Button, TextField } from '@mui/material';
+
+// ✅ GOOD: import directly from source paths
+import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
+```
+
+Commonly affected: `lucide-react`, `@mui/material`, `@mui/icons-material`, `react-icons`, `@radix-ui/react-*`, `lodash`, `date-fns`, `rxjs`.
+
+**Framework shortcut (Next.js 13.5+):** `experimental.optimizePackageImports` rewrites barrel imports to direct ones at build time while keeping types and autocomplete. Confirm a library ships types for its deep paths before importing them directly, since some (like `lucide-react`) don't.
+
+### Code-split heavy and non-critical code
+
+Lazy-load anything not needed for the first paint: editors, charts, maps, modals. Use `React.lazy` + `Suspense` (portable) or your framework's dynamic loader.
+
+```tsx
+// ❌ BAD: Monaco (~300KB) ships in the main chunk
+import { MonacoEditor } from './MonacoEditor';
+
+// ✅ GOOD: loads on demand
+import { lazy, Suspense } from 'react';
+const MonacoEditor = lazy(() => import('./MonacoEditor').then((m) => ({ default: m.MonacoEditor })));
+
+function CodePanel({ code }: { code: string }) {
+  return (
+    <Suspense fallback={<EditorSkeleton />}>
+      <MonacoEditor value={code} />
+    </Suspense>
+  );
+}
+```
+
+Preload on intent (hover or focus) so the chunk is warm before the click. Guard with `typeof window` so the import never enters the server bundle.
+
+```tsx
+function EditorButton({ onClick }: { onClick: () => void }) {
+  const preload = () => { if (typeof window !== 'undefined') void import('./MonacoEditor'); };
+  return <button onMouseEnter={preload} onFocus={preload} onClick={onClick}>Open editor</button>;
+}
+```
+
+Defer non-critical third-party code (analytics, logging, error tracking) until after hydration. It never blocks interaction, so it shouldn't sit in the initial bundle.
+
+> **Framework note:** Next.js `next/dynamic` with `{ ssr: false }` covers both the split and the hydration-defer in one call.
 
 ## Performance Guidelines
 
@@ -3275,6 +3715,137 @@ function VirtualProductList({ products }: { products: Product[] }) {
 ```
 
 ---
+
+## Re-render Optimization
+
+Measure before memoizing. Some patterns cause re-renders (or full remounts) unconditionally though. Fix these on sight.
+
+### Don't define components inside components
+
+A component defined in another component is a new type on every render. React remounts it, destroying its state, focus, and DOM.
+
+```tsx
+// ❌ BAD: Avatar is a new type each render; the input loses focus and effects re-run
+function UserProfile({ user, theme }: Props) {
+  const Avatar = () => <img src={user.avatarUrl} className={theme} />;
+  return <div><Avatar /></div>;
+}
+
+// ✅ GOOD: hoist it, pass props
+function Avatar({ src, theme }: { src: string; theme: string }) {
+  return <img src={src} className={theme} />;
+}
+function UserProfile({ user, theme }: Props) {
+  return <div><Avatar src={user.avatarUrl} theme={theme} /></div>;
+}
+```
+
+Symptoms: inputs losing focus per keystroke, animations restarting, `useEffect` re-running on every parent render.
+
+### Derive state during render, not in effects
+
+When a value comes from current props or state, compute it inline. Storing it in state and syncing via `useEffect` adds a redundant render and invites drift.
+
+```tsx
+// ❌ BAD: extra state, extra render
+const [fullName, setFullName] = useState('');
+useEffect(() => { setFullName(`${first} ${last}`); }, [first, last]);
+
+// ✅ GOOD: derive it
+const fullName = `${first} ${last}`;
+```
+
+### Use functional setState
+
+When new state depends on old state, use the updater form. The callback needs no state dependency, stays stable, and can't go stale.
+
+```tsx
+// ❌ BAD: recreated on every items change; the second is a stale-closure bug
+const addItems = useCallback((next: Item[]) => setItems([...items, ...next]), [items]);
+const removeItem = useCallback((id: string) => setItems(items.filter((i) => i.id !== id)), []);
+
+// ✅ GOOD: stable, always the latest state
+const addItems = useCallback((next: Item[]) => setItems((curr) => [...curr, ...next]), []);
+const removeItem = useCallback((id: string) => setItems((curr) => curr.filter((i) => i.id !== id)), []);
+```
+
+### Lazy-init expensive state
+
+`useState(expensive())` runs `expensive()` on every render. Pass a function so it runs once. The chapter already does this for `QueryClient`.
+
+```tsx
+// ❌ BAD: buildIndex runs every render
+const [index] = useState(buildIndex(items));
+
+// ✅ GOOD: runs once
+const [index] = useState(() => buildIndex(items));
+```
+
+Use it for `localStorage` reads, index and map construction, and DOM reads. Skip it for primitives and cheap literals (`useState(0)`, `useState({})`).
+
+### Memo the component, not the trivial expression
+
+Extract expensive work into a `memo`'d component so early returns skip it. Don't wrap cheap primitive expressions in `useMemo`, since the dependency comparison costs more than the work.
+
+```tsx
+// ❌ BAD: computes avatar even while loading
+const avatar = useMemo(() => <Avatar id={computeId(user)} />, [user]);
+if (loading) return <Skeleton />;
+
+// ✅ GOOD: extract, return early, compute only when rendered
+const UserAvatar = memo(({ user }: { user: User }) => <Avatar id={computeId(user)} />);
+if (loading) return <Skeleton />;
+return <UserAvatar user={user} />;
+
+// ❌ BAD: pointless memo around a boolean
+const isLoading = useMemo(() => a.isLoading || b.isLoading, [a.isLoading, b.isLoading]);
+// ✅ GOOD
+const isLoading = a.isLoading || b.isLoading;
+```
+
+Running React Compiler, drop manual `memo` and `useMemo` entirely. It handles this.
+
+### useRef for transient values
+
+Values that change many times a second (mouse position, scroll offset, timers) don't belong in state. `useState` re-renders on every update; a ref doesn't.
+
+```tsx
+// ✅ track without re-rendering; write straight to the DOM node
+const lastXRef = useRef(0);
+const dotRef = useRef<HTMLDivElement>(null);
+useEffect(() => {
+  const onMove = (e: MouseEvent) => {
+    lastXRef.current = e.clientX;
+    if (dotRef.current) dotRef.current.style.transform = `translateX(${e.clientX}px)`;
+  };
+  window.addEventListener('mousemove', onMove);
+  return () => window.removeEventListener('mousemove', onMove);
+}, []);
+```
+
+### useDeferredValue for heavy filtering
+
+When typing drives an expensive render (filtering a large list, redrawing a chart), defer the derived value so input stays responsive. This complements the `useTransition` example above.
+
+```tsx
+function Search({ items }: { items: Item[] }) {
+  const [query, setQuery] = useState('');
+  const deferred = useDeferredValue(query);
+  const filtered = useMemo(() => items.filter((i) => fuzzyMatch(i, deferred)), [items, deferred]);
+  const isStale = query !== deferred;
+
+  return (
+    <>
+      <input value={query} onChange={(e) => setQuery(e.target.value)} />
+      <div style={{ opacity: isStale ? 0.7 : 1 }}>
+        <ResultsList results={filtered} />
+      </div>
+    </>
+  );
+}
+```
+
+Keep the computation in `useMemo` keyed on the deferred value, or it re-runs every render anyway.
 
 ## Security Basics
 
@@ -3401,7 +3972,7 @@ src/
 
 ### Golden Feature Folder Example
 
-Teams adopt faster with a concrete layout. Here's a complete feature module:
+Teams adopt faster with a concrete layout:
 
 ```text
 src/

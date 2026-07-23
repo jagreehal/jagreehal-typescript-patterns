@@ -11,9 +11,9 @@ Your functions are clean. They have explicit deps, validated args, and honest er
 
 Then you deploy to production.
 
-A user reports "it didn't work." Your support team asks what happened. You check the logs and find... nothing useful. Maybe a generic error. Maybe a stack trace that points somewhere unhelpful.
+A user reports "it didn't work." Your support team asks what happened. You check the logs and find nothing useful: a generic error, or a stack trace that points somewhere unhelpful.
 
-You can't see inside your functions when they run. They're opaque boxes.
+You can't see inside your functions when they run.
 
 ---
 
@@ -45,7 +45,7 @@ async function getUser(args: { userId: string }, deps: GetUserDeps) {
 
 Now you have visibility. But look what happened to your function.
 
-Half of it is logging. The actual business logic (find user, return it) is buried under observability concerns. And you have to do this for *every* function.
+Half of it is logging. The business logic (find user, return it) is buried under observability concerns. And you have to do this for every function.
 
 ### The String Interpolation Problem
 
@@ -71,7 +71,7 @@ Which produces:
 
 Now you can filter logs by `userId`, count actions, and build dashboards.
 
-**Why Pino?** Use [Pino](https://github.com/pinojs/pino) for structured logging. It's the fastest Node.js logger (benchmarks show 5x+ faster than Winston) and outputs JSON by default. For a complete setup guide, see [Structured Logging with Pino](https://arrangeactassert.com/posts/structured-logging-with-pino/) -it covers:
+**Why Pino?** Use [Pino](https://github.com/pinojs/pino) for structured logging. It's the fastest Node.js logger (benchmarks show 5x+ faster than Winston) and outputs JSON by default. For a complete setup guide, see [Structured Logging with Pino](https://arrangeactassert.com/posts/structured-logging-with-pino/), which covers:
 
 - Child loggers for request context
 - Log levels and when to use each
@@ -127,7 +127,7 @@ logger.info({ event: 'login', user: req.body });
 }
 ```
 
-Define redaction paths once, and sensitive fields are stripped from *all* logs automatically. You can't forget.
+Define redaction paths once, and Pino strips sensitive fields from all logs.
 
 ### Redaction in Span Attributes
 
@@ -184,11 +184,11 @@ init({
 }
 ```
 
-SOC2 and GDPR compliance often require filtering at both layers. Defense in depth.
+SOC2 and GDPR compliance often require filtering at both layers.
 
 ### From Logging to Tracing
 
-But even structured logging has limits. Logs are isolated events. When a request flows through multiple services, you can't easily connect the logs. You end up grepping timestamps and hoping.
+But even structured logging has limits. Logs are isolated events. When a request flows through multiple services, you can't connect the logs. You end up grepping timestamps and hoping.
 
 **Distributed tracing** solves this. Instead of isolated logs, you get spans that connect into traces. A single request becomes a tree of operations you can visualize and query.
 
@@ -214,15 +214,15 @@ sdk.start();
 // ... and you still need to manually create spans in your code
 ```
 
-Tons of boilerplate before you've traced a single function. And auto-instrumentation only traces HTTP/database calls -not your business logic.
+Tons of boilerplate before you've traced a single function. And auto-instrumentation only traces HTTP/database calls, not your business logic.
 
-What if there was a way to get tracing without the setup pain?
+You want tracing without the setup pain.
 
 ---
 
 ## The trace() Wrapper
 
-[autotel](https://github.com/jagreehal/autotel) eliminates the OpenTelemetry boilerplate. Instead of configuring SDKs, exporters, and instrumentations, you get a simple `trace()` function that wraps your functions with automatic spans:
+[autotel](https://github.com/jagreehal/autotel) eliminates the OpenTelemetry boilerplate. Instead of configuring SDKs, exporters, and instrumentations, you get a `trace()` function that wraps your functions with automatic spans:
 
 ```typescript
 import { trace, type TraceContext } from 'autotel';
@@ -289,11 +289,11 @@ const myFunction = trace(
 
 The `trace()` wrapper gives you a `ctx` for span manipulation, but it doesn't pollute your deps. The span context is separate from your business dependencies.
 
-And critically: **the wrapper is orthogonal to `fn(args, deps)`**. They compose without conflict.
+The wrapper is orthogonal to `fn(args, deps)`. They compose without conflict.
 
 ### What trace() Actually Does
 
-If you can't add a new library, you can build a minimal version yourself. At its core, `trace()` is just a higher-order function:
+If you can't add a new library, you can build a minimal version yourself. `trace()` is a higher-order function:
 
 ```typescript
 function trace<Args, Deps, R>(
@@ -325,7 +325,7 @@ That's the conceptual model: wrap a function, create a span, provide context, an
 
 ## Testing Traced Functions
 
-Here's the beautiful part: tests don't change.
+Tests don't change.
 
 ```typescript
 describe('getUser', () => {
@@ -345,7 +345,7 @@ describe('getUser', () => {
 });
 ```
 
-No mocking the tracer. No special setup. When tracing is disabled (no OpenTelemetry endpoint), `trace()` is essentially a no-op wrapper. Your tests run against the same function signature they always did.
+No mocking the tracer. No special setup. When tracing is disabled (no OpenTelemetry endpoint), `trace()` is a no-op wrapper. Your tests run against the same function signature as before.
 
 ---
 
@@ -384,7 +384,7 @@ No manual context propagation. The wrapper handles it.
 
 ## Integrating With Results
 
-Here's where everything we've built comes together. Your Result types map naturally to span status:
+Your Result types map to span status:
 
 ```typescript
 const getUser = trace(
@@ -407,7 +407,7 @@ const getUser = trace(
 
 ### The Observer Pattern for Observability
 
-This is the key architectural insight: **tracing implements the Observer pattern**.
+**Tracing implements the Observer pattern.**
 
 ```mermaid
 graph TD
@@ -425,7 +425,7 @@ graph TD
     linkStyle 0 stroke:#0f172a,stroke-width:3px
 ```
 
-The business function is the **subject** -it produces Results and doesn't know who's watching. The `trace()` wrapper is the **observer** -it watches without interfering.
+The business function is the **subject**. It produces Results and doesn't know who's watching. The `trace()` wrapper is the **observer**. It watches without interfering.
 
 This preserves the **Pure Core** of your application:
 
@@ -436,11 +436,11 @@ This preserves the **Pure Core** of your application:
 
 **The right direction of dependency:**
 
-- Tracing should NOT decide if the operation succeeded
-- The Result decides, tracing just records it
+- Tracing should not decide whether the operation succeeded
+- The Result decides, tracing records it
 - Observability is a side effect, not a control flow mechanism
 
-This separation is what makes the pattern work at scale. Your core logic stays pure and testable.
+This separation keeps your core logic pure and testable at scale.
 
 ---
 
@@ -605,7 +605,7 @@ ctx.setAttribute('user.id', args.userId);
 ctx.setAttribute('order.value', total);  // Custom, but follows convention style
 ```
 
-**Why this matters:** Using standardized keys allows Grafana, Honeycomb, and Jaeger to automatically build dashboards, correlate data across services, and trigger alerts without custom configuration. It's interoperability for free.
+Standardized keys let Grafana, Honeycomb, and Jaeger build dashboards, correlate data across services, and trigger alerts without custom configuration.
 
 For custom business attributes, follow the naming convention: `{domain}.{attribute}` (e.g., `order.item_count`, `payment.method`).
 
@@ -701,7 +701,7 @@ Now every log line includes tracing context:
 }
 ```
 
-**Why this matters:** You can now "one-click jump" from a trace span to the detailed logs of that specific operation. In Grafana, you can link Loki logs to Tempo traces. In Honeycomb, you can query logs and traces together.
+You can now "one-click jump" from a trace span to the detailed logs of that operation. In Grafana, you can link Loki logs to Tempo traces. In Honeycomb, you can query logs and traces together.
 
 This turns your observability from "two separate tools" into a unified debugging experience.
 
@@ -709,7 +709,7 @@ This turns your observability from "two separate tools" into a unified debugging
 
 ## Canonical Log Lines (Wide Events)
 
-There's a fundamental problem with traditional logging that even structured logging doesn't solve: **logs are optimized for writing, not querying**.
+Traditional logging has a problem structured logging doesn't solve: **logs are optimized for writing, not querying**.
 
 When a user reports "checkout failed," you need to find that specific request across potentially millions of log lines. With traditional logging, you get multiple scattered entries per request:
 
@@ -727,7 +727,7 @@ Each line has partial context. To reconstruct what happened, you need to:
 3. Correlate by timestamp
 4. Hope you don't mix up concurrent requests
 
-**Canonical log lines** (also called "wide events") solve this by emitting **one comprehensive log per request** with ALL context:
+**Canonical log lines** (also called "wide events") solve this by emitting **one comprehensive log per request** with all context:
 
 ```json
 {
@@ -838,7 +838,7 @@ const processCheckout = trace((ctx) => async (req: CheckoutRequest) => {
 
 ### Why This Works
 
-The pattern follows **tail sampling**: you decide what to log *after* the span completes, when you know the full picture (duration, status, all accumulated context). This is more useful than head sampling (logging at the start when you don't know what will happen).
+The pattern follows **tail sampling**: you decide what to log after the span completes, when you know the full picture (duration, status, all accumulated context). This is more useful than head sampling (logging at the start when you don't know what will happen).
 
 Key characteristics of canonical log lines:
 
@@ -849,7 +849,7 @@ Key characteristics of canonical log lines:
 
 For a complete working example, see the [autotel canonical logs example](https://github.com/jagreehal/autotel/tree/main/apps/example-canonical-logs).
 
-**Further reading:** The "logs are optimized for writing, not querying" insight comes from Boris Tane's excellent article [Logging Sucks](https://arrangeactassert.com/posts/logging-sucks/), which introduces the wide events pattern and the "Wide Event Builder Simulator" concept.
+**Further reading:** The "logs are optimized for writing, not querying" insight comes from Boris Tane's article [Logging Sucks](https://arrangeactassert.com/posts/logging-sucks/), which introduces the wide events pattern and the "Wide Event Builder Simulator" concept.
 
 ---
 
@@ -868,18 +868,14 @@ For a complete working example, see the [autotel canonical logs example](https:/
 
 ## What's Next
 
-We've got observable functions. When something fails, we can trace exactly what happened.
+We've got observable functions. When something fails, we can trace what happened.
 
-But here's a problem we haven't addressed: what happens when our infrastructure fails *transiently*?
+But traces expire. Retention keeps them for days or weeks, not years. Some questions arrive long after the trace is gone: "What rate did we convert at? Which card did we charge?"
 
-A database connection drops for a second. An HTTP request times out once, then succeeds. A service is briefly unavailable during deployment.
+You answer those from a record you wrote at the moment of the decision.
 
-Our functions fail on the first error. But some failures are temporary. Should we retry? How many times? What about cascading failures?
-
-How do we make our functions resilient without cluttering them with retry logic?
-
-That's what we'll figure out next.
+That's what we'll build next.
 
 ---
 
-*Next: [Resilience Patterns](..//resilience). Retries, circuit breakers, and timeouts.*
+*Next: [Point-in-Time Capture](..//point-in-time-capture). Recording every decision's inputs when you act on them, so you can answer for them forever.*

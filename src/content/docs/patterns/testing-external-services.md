@@ -1,21 +1,21 @@
 ---
 title: Testing External Infrastructure
-description: Learn how to test infrastructure you control vs infrastructure you don't, using stubs, sandboxes, MSW, and nock for comprehensive integration testing.
+description: Test infrastructure you control versus infrastructure you don't, using stubs, sandboxes, MSW, and nock for integration testing.
 ---
 
 _Previously: [Why This Pattern Exists](../testing). We covered unit tests with mocks and integration tests with real databases. Now let's handle external services._
 
-So far we've talked about testing your own code. You control the database, you control the cache, you control the business logic.
+We've covered testing your own code. You control the database, the cache, the business logic.
 
-But what about the payment provider? The email service? The third-party API your app depends on?
+But what about the payment provider, the email service, or the third-party API your app depends on?
 
-You don't control those. And that changes everything.
+You don't control those, and they need different test strategies.
 
 ---
 
 ## The Two Kinds of Infrastructure
 
-There's a fundamental split in how you test infrastructure:
+Infrastructure divides into two kinds:
 
 1. **Infrastructure you control** - Your database, your cache, your message queue
 2. **Infrastructure you don't control** - Stripe, SendGrid, external APIs
@@ -57,9 +57,9 @@ For infrastructure your app owns (your database, your cache, your internal servi
 
 ### Stubs for Test Data
 
-Create helper functions that set up realistic test data. These aren't mocks: they're real database records, real cache entries, created with [Faker](https://fakerjs.dev/) for variety.
+Create helper functions that build realistic test data. They produce real database records and real cache entries with [Faker](https://fakerjs.dev/) for variety, not mock behavior.
 
-> **Note:** These are sometimes called "fixtures" or "factories" in other testing frameworks. The key point is they create real data, not fake behavior. We use "stubs" here to mean "test data helpers."
+> **Note:** Other testing frameworks call these "fixtures" or "factories." They create real data, not fake behavior. Here "stubs" means "test data helpers."
 
 ```typescript
 // src/test-utils/stubs.ts
@@ -188,7 +188,7 @@ Many services provide test sandboxes. Stripe, SendGrid, and Twilio all have test
 
 **Worldpay Example (Magic Values):**
 
-Some sandboxes use "magic values" in specific request fields to trigger deterministic responses. Worldpay's sandbox allows you to use special strings in the `cardHolderName` field to force specific outcomes. These "magic values" are specific to Worldpay's sandbox and only apply in test environments.
+Some sandboxes use "magic values" in specific request fields to trigger deterministic responses. Worldpay's sandbox reads special strings in the `cardHolderName` field to force specific outcomes. These "magic values" are specific to Worldpay's sandbox and only apply in test environments.
 
 ```typescript
 // src/payments/worldpay-payment.test.int.ts
@@ -503,7 +503,7 @@ describe('createCharge (integration)', () => {
 
 ## Testing Error Scenarios: Rate Limits, Retries, and Timeouts
 
-Integration tests with MSW or Nock let you test error scenarios that are difficult to trigger with real services. This is especially valuable for testing resilience patterns like retries, backoffs, and timeout handling.
+Integration tests with MSW or Nock let you test error scenarios that are difficult to trigger with real services. It helps most when testing resilience patterns like retries, backoffs, and timeout handling.
 
 ### Testing Rate Limits (429 Errors)
 
@@ -582,7 +582,7 @@ it('handles timeout gracefully', async () => {
 
 ### Testing Retry and Backoff Logic
 
-Verify that your retry logic with exponential backoff works correctly:
+Verify your retry logic with exponential backoff works:
 
 ```typescript
 it('implements exponential backoff on retries', async () => {
@@ -709,20 +709,20 @@ it('handles payment service failure gracefully', async () => {
 });
 ```
 
-**Why this matters:**
+**What this gives you:**
 
 - **Reliability**: Verify your retry and backoff logic works before production
 - **User experience**: Test error messages and loading states in frontend
 - **Resilience**: Ensure cascading failures are handled gracefully
 - **Performance**: Test timeout handling without waiting for real network delays
 
-These scenarios are nearly impossible to test reliably with real services, but integration tests with MSW or Nock make them straightforward.
+These scenarios are hard to trigger with real services; MSW or Nock make them straightforward.
 
 ---
 
 ## Why Integration Tests, Not E2E
 
-These are **integration tests**, not end-to-end (E2E) tests. Here's the distinction:
+These are **integration tests**, not end-to-end (E2E) tests:
 
 **Integration tests:**
 - Test integration with external services
@@ -763,7 +763,7 @@ graph LR
 - Test against actual service behavior (not documented)
 - Final smoke test before deployment
 
-But for day-to-day development? Integration tests with sandboxes or MSW/nock give you 90% of the value with 10% of the pain.
+For day-to-day development, integration tests with sandboxes or MSW/nock give you 90% of the value with 10% of the pain.
 
 ---
 
@@ -867,9 +867,9 @@ This gives you confidence that your code works end-to-end, without the flakiness
 
 ## What's Next
 
-We've covered testing your own code and testing external services. But there's one more piece: how do you structure your code so it's easy to test in the first place?
+We've covered testing your own code and testing external services. One piece remains: structuring your code so it's easy to test in the first place.
 
-That's where the `fn(args, deps)` pattern comes in.
+That's the `fn(args, deps)` pattern.
 
 ---
 

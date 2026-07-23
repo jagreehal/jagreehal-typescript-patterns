@@ -16,10 +16,10 @@ Over this series, we've established a complete architecture for TypeScript appli
 4. **Trace orthogonally.** Wrap functions with `trace()` from autotel. Observability without cluttering business logic. Use semantic conventions and correlate logs with traces.
 5. **Resilience in workflows.** Use `step.retry()` and `step.withTimeout()` at the workflow level. Never retry non-idempotent operations. Use jitter to prevent thundering herd.
 6. **Configuration at startup.** Validate and type config at the boundary with `node-env-resolver`. Secrets in memory only, never in `process.env`. Use secret managers and ephemeral credentials.
-7. **API design.** Thin handlers translate HTTP to domain. Consistent error envelopes. Health checks, graceful shutdown, security headers. Everything comes together at the boundary.
+7. **API design.** Thin handlers translate HTTP to domain. Consistent error envelopes. Health checks, graceful shutdown, security headers.
 8. **TypeScript enforces types.** Beyond `strict`: `noUncheckedIndexedAccess`, `erasableSyntaxOnly`, `verbatimModuleSyntax`. Use `ts-reset` to close `any` leaks.
-9. **ESLint enforces patterns.** Lint-time checks catch architectural violations (boundaries, object params, server/client separation). Rules fail builds, not just warn.
-10. **Performance testing proves it.** Load tests (smoke, load, stress, soak, spike) reveal bottlenecks; chaos tests prove resilience patterns actually work.
+9. **ESLint enforces patterns.** Lint-time checks catch architectural violations (boundaries, object params, server/client separation). Rules fail builds rather than warn.
+10. **Performance testing proves it.** Load tests (smoke, load, stress, soak, spike) reveal bottlenecks; chaos tests prove resilience patterns work.
 
 ---
 
@@ -32,7 +32,7 @@ Code that follows these patterns is:
 | **Explicit** | Deps, errors, resilience policies, and configuration are visible in function signatures |
 | **Testable** | Mock only what you need, inject dependencies, no `vi.mock` needed |
 | **Observable** | Traces show what happened, including retries and timeouts |
-| **Resilient** | Transient failures don't crash everything; workflows handle retries |
+| **Resilient** | Transient failures don't crash the system; workflows handle retries |
 | **Type-safe** | Configuration is validated and typed at startup; `ts-reset` closes `any` leaks; `noUncheckedIndexedAccess` prevents undefined array access |
 | **Secure** | Secrets loaded into memory only, never in `process.env`; secret scanning in CI (TruffleHog/Gitleaks); redaction for logs and span attributes |
 | **Enforced** | TypeScript and ESLint catch violations before code ships |
@@ -239,7 +239,7 @@ This series covered the core patterns. There's more to explore:
 - **Continuous profiling:** Find bottlenecks in production, not just during load tests
 - **Framework integration:** Applying these patterns in Next.js, Remix, TanStack Start
 
-The foundation is set. Build on it.
+You have the foundation now. Build on it.
 
 ---
 

@@ -9,7 +9,7 @@ I want to talk about dependency injection.
 
 Wait, don't leave. I know "dependency injection" sounds like something from a Java enterprise architecture book from 2005. It sounds complicated.
 
-But here's the thing: you're already doing it. Every time you pass something to a function instead of reaching for a global, that's dependency injection. The question isn't whether to do it. It's _how_.
+You're already doing it. Every time you pass something to a function instead of reaching for a global, that's dependency injection. The question is how you do it.
 
 ---
 
@@ -41,15 +41,13 @@ class UserService {
 }
 ```
 
-This looks fine at first. But something subtle is happening here.
+This looks fine at first. Look at `getUser`. It only needs `db` and `logger`. But to test it, you have to satisfy the _entire_ constructor, including `cache`, `mailer`, and `metrics` that it doesn't use.
 
-Look at `getUser`. It only needs `db` and `logger`. But to test it, you have to satisfy the _entire_ constructor, including `cache`, `mailer`, and `metrics` that it doesn't use.
-
-A new developer joins. They ask: "What does `getUser` need?" You point to the constructor: five dependencies. They mock all five. The test passes. Two months later, someone adds `this.metrics.increment('user_fetched')` inside `getUser`. The test still passes -but now it's lying. It doesn't verify that metric increment ever happened, because the mock was set up blindly.
+A new developer joins. They ask: "What does `getUser` need?" You point to the constructor: five dependencies. They mock all five. The test passes. Two months later, someone adds `this.metrics.increment('user_fetched')` inside `getUser`. The test still passes, but now it's lying. It doesn't verify that metric increment ever happened, because the mock was set up blindly.
 
 As the class grows, the constructor accumulates more and more dependencies. Every method inherits access to everything, whether it needs it or not. You end up with a "god object" where any method might touch any dependency via `this`.
 
-What does `getUser` actually need? You can't tell from its signature. You have to read the implementation.
+What does `getUser` need? You can't tell from its signature. You have to read the implementation.
 
 ```mermaid
 graph TD
@@ -96,7 +94,7 @@ A new developer joins. They ask: "What does `getUser` need?" You point to the ty
 
 No hidden state. No constructor that accumulates junk. The function declares its contract explicitly.
 
-Yes, this is just functions + closures, and that's a feature, not a workaround.
+Yes, this is functions and closures, by design.
 
 This is the core pattern:
 
@@ -142,7 +140,7 @@ type GetUserDeps = { db: Database; logger: Logger };
 type CreateUserDeps = { db: Database; logger: Logger; mailer: Mailer };
 ```
 
-Look at that. `getUser` doesn't pretend to need `mailer`. The type system documents the truth.
+`getUser` doesn't pretend to need `mailer`. The type documents what it uses.
 
 ### 2. Testing Gets Simpler
 
@@ -169,7 +167,7 @@ Compare to the class version where you'd have to mock `mailer`, `cache`, and eve
 
 I prefer tests next to source files. `notify.ts` gets `notify.test.ts` for unit tests and `notify.int.test.ts` for integration tests. (See [Testing Strategy](../testing) for the full approach.)
 
-With functions, this works naturally:
+With functions, this works:
 
 ```
 user/
@@ -197,7 +195,7 @@ That test file becomes a problem:
 - **Developer experience suffers.** Harder to reason about, harder to review PRs.
 - **AI context bloats.** LLMs have to load the entire test file to understand any part of it.
 
-And here's the key insight: **with classes, this is unbounded**. What seems manageable at 3 methods becomes painful at 10 and unworkable at 20. There's no natural stopping point. The class accumulates methods, the test file accumulates describe blocks, and both grow without limit.
+**With classes, this is unbounded.** What seems manageable at 3 methods becomes painful at 10 and unworkable at 20. There's no natural stopping point. The class accumulates methods, the test file accumulates describe blocks, and both grow without limit.
 
 With functions, you hit the natural boundary: one function, one file, one test file. Growth means adding new files, not bloating existing ones.
 
@@ -223,7 +221,7 @@ class UserService {
 }
 ```
 
-You're reviewing a PR that changes `sendWelcomeEmail` to require an API key. The PR looks simple: add `apiKey` to the constructor, use it in `sendWelcomeEmail`. But wait -what calls `sendWelcomeEmail`? You grep for it: called from `createUser`, `reactivateUser`, and `inviteUser`. Do all those callers have the context needed for this new API call? You can't tell from the PR. You have to trace through every method that touches `this`.
+You're reviewing a PR that changes `sendWelcomeEmail` to require an API key. The PR looks simple: add `apiKey` to the constructor, use it in `sendWelcomeEmail`. But wait, what calls `sendWelcomeEmail`? You grep for it: called from `createUser`, `reactivateUser`, and `inviteUser`. Do all those callers have the context needed for this new API call? You can't tell from the PR. You have to trace through every method that touches `this`.
 
 With functions, collaborators must be explicit:
 
@@ -248,7 +246,7 @@ async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
 }
 ```
 
-Want to know what `createUser` depends on? Look at its deps type. It's right there. And because we use `typeof` with the real function import, `Cmd+Click` takes you straight to the implementation — no chasing through type aliases.
+Want to know what `createUser` depends on? Look at its deps type. It's right there. And because we use `typeof` with the real function import, `Cmd+Click` takes you straight to the implementation, no chasing through type aliases.
 
 ---
 
@@ -258,13 +256,13 @@ This is where the pattern pays for itself fastest.
 
 Most codebases don't have great test coverage. When you point an AI coding agent at code like that, the first thing it tries to do is write tests. And the first thing it struggles with is mocking.
 
-With classes, the agent has to figure out the constructor's full dependency list, mock everything (including dependencies the method doesn't use), navigate `vi.mock()` or `jest.mock()` hoisting rules, and deal with `this` bindings and private methods. The result is fragile tests full of ceremony that mock the wrong things and pass for the wrong reasons. The agent scales output fast — but it also scales entropy fast.
+With classes, the agent has to figure out the constructor's full dependency list, mock everything (including dependencies the method doesn't use), navigate `vi.mock()` or `jest.mock()` hoisting rules, and deal with `this` bindings and private methods. The result is fragile tests full of ceremony that mock the wrong things and pass for the wrong reasons. The agent scales output fast, and scales entropy with it.
 
 With `fn(args, deps)`, the agent's job becomes mechanical:
 
-- Look at the `Deps` type — that's exactly what to mock
-- Look at the `Args` type — that's exactly what to pass in
-- Look at the return type — that's exactly what to assert on
+- Look at the `Deps` type: that's what to mock
+- Look at the `Args` type: that's what to pass in
+- Look at the return type: that's what to assert on
 
 No guessing. No over-mocking. No `vi.mock()` hoisting gymnastics.
 
@@ -301,7 +299,7 @@ export async function createOrder(
 The agent can see:
 
 - **What goes in**: `CreateOrderArgs` with exact field shapes
-- **What it depends on**: `CreateOrderDeps` — three things to mock, nothing more
+- **What it depends on**: `CreateOrderDeps`, three things to mock, nothing more
 - **What comes out**: `CreateOrderResult` with exact field shapes
 
 Provide example data, schemas, and return shapes, and the test practically writes itself:
@@ -341,7 +339,7 @@ const mockMetrics = { increment: vi.fn() };          // not even used by this me
 const service = new OrderService(mockDb, mockPayment, mockLogger, mockCache, mockMetrics);
 ```
 
-The agent mocks five dependencies because the constructor demands five. It doesn't know which ones `createOrder` actually uses. The test passes, but it's lying about coverage. Two months later someone adds `this.metrics.increment('order_created')` inside `createOrder` and the test still passes — silently losing verification.
+The agent mocks five dependencies because the constructor demands five. It doesn't know which ones `createOrder` uses. The test passes, but it's lying about coverage. Two months later someone adds `this.metrics.increment('order_created')` inside `createOrder` and the test still passes, losing verification without warning.
 
 ### The Cheapest Harness You Can Adopt
 
@@ -351,7 +349,7 @@ Start writing functions as `fn(args, deps)`.
 
 That single change gives agents (and humans) a deterministic testing seam. When the dependency surface is visible, mocking is mechanical. When types define the contract, the agent doesn't have to guess. When each function is its own file, the context stays small enough for the agent to hold in its window.
 
-It's not a framework. It's a seam. And it's the smallest change that makes the biggest difference when you need to go from zero tests to meaningful coverage.
+It's a seam, and the smallest change that moves you from zero tests to meaningful coverage.
 
 ### Each Function Is a Self-Contained Prompt
 
@@ -372,7 +370,7 @@ Because every function follows the same shape, you can show the agent a single e
 
 > "Here's how we write functions and tests in this codebase. Follow this pattern."
 
-And it replicates that pattern consistently across every function it writes or tests. The pattern is _uniform_. There's no variation in how dependencies are accessed, no per-service quirks, no "this service uses a factory but that one uses a singleton."
+And it replicates that pattern across every function it writes or tests. The pattern is _uniform_. There's no variation in how dependencies are accessed, no per-service quirks, no "this service uses a factory but that one uses a singleton."
 
 With classes, every service is structured differently. Constructor patterns vary. Some use property injection, some use method injection, some use module-level singletons. The agent has to re-learn the conventions per file.
 
@@ -391,11 +389,11 @@ Argument of type '{ db: Database }' is not assignable to parameter of type 'Crea
 
 That error _is_ the fix instruction. The agent reads it, adds the missing dep, and moves on.
 
-With class-based code, errors are noisier — constructor overload mismatches, `this` context issues, mock type incompatibilities that point to deep framework internals. The agent tries to fix one thing and breaks two others.
+With class-based code, errors are noisier: constructor overload mismatches, `this` context issues, mock type incompatibilities that point to deep framework internals. The agent tries to fix one thing and breaks two others.
 
 ### Parallel Work Without Merge Conflicts
 
-When two agents (or an agent and a human) work on the same class, they're editing the same file. Constructor changes, new methods, import additions — all competing for the same lines.
+When two agents (or an agent and a human) work on the same class, they're editing the same file. Constructor changes, new methods, import additions, all competing for the same lines.
 
 With functions, `get-user.ts` and `create-order.ts` are separate files. Two agents can work on them simultaneously with zero chance of conflict. This is practical: you can fan out test-writing across your codebase without serializing the work.
 
@@ -403,9 +401,9 @@ With functions, `get-user.ts` and `create-order.ts` are separate files. Two agen
 
 With `fn(args, deps)`, the definition of "test complete" is bounded by the types:
 
-1. Mock everything in `Deps` — the type tells you the exact list
-2. Call with `Args` — the type tells you the exact shape
-3. Assert on the return — the type tells you the exact output
+1. Mock everything in `Deps`; the type tells you the exact list
+2. Call with `Args`; the type tells you the exact shape
+3. Assert on the return; the type tells you the exact output
 
 There's no ambiguity about scope. The agent can't miss a hidden `this.metrics.track()` call because there is no `this`. If the function uses a dep, it's in the type. If it's not in the type, the function doesn't use it.
 
@@ -413,19 +411,19 @@ With classes, the agent is always guessing: "Did I mock everything this method t
 
 ### The Pattern Is the Constraint
 
-This is the deeper point. `fn(args, deps)` isn't just a style preference — it's a _structural constraint_ that forces both humans and AI to color within the lines.
+`fn(args, deps)` is a _structural constraint_ that forces both humans and AI to color within the lines.
 
 The types enforce the boundaries:
 
-- `Args` declares _what_ the function does — its intent, its inputs, its scope
-- `Deps` declares _how_ it interacts with the outside world — every collaborator, visible and named
-- The return type declares _why_ you'd call it — what you get back
+- `Args` declares _what_ the function does: its intent, its inputs, its scope
+- `Deps` declares _how_ it interacts with the outside world: every collaborator, visible and named
+- The return type declares _why_ you'd call it: what you get back
 
-That's what, how, and why — encoded in the type system, not in comments or documentation that drifts.
+That's what, how, and why, encoded in the type system rather than in comments or documentation that drifts.
 
-Without this kind of structural constraint, AI-generated code is a wild west. The agent produces something that works _today_, but you can't reason about it. You can't tell what it depends on. You can't tell what changed. You can't compose it with anything else because the boundaries are invisible.
+Without this kind of structural constraint, AI-generated code is a wild west. The agent produces something that works _today_, but you can't reason about it. You can't tell what it depends on or what changed, and you can't compose it with anything else because the boundaries are invisible.
 
-Linters help. Code review helps. But those are _after-the-fact_ corrections. They catch problems that already exist. The `fn(args, deps)` pattern prevents the problems from being introduced in the first place. It's better to make the wrong thing hard to write than to detect it after it's written.
+Linters and code review help, but they're _after-the-fact_ corrections that catch problems already there. The `fn(args, deps)` pattern prevents the problems from being introduced. It's better to make the wrong thing hard to write than to detect it afterward.
 
 And this is where composition comes in. When every function has an explicit, typed dependency surface, composing functions becomes mechanical:
 
@@ -448,7 +446,7 @@ async function processOrder(args: ProcessOrderArgs, deps: ProcessOrderDeps) {
 
 You can see every dependency that `processOrder` needs by reading its type. The agent can compose these functions because the interfaces are uniform. A human reviewer can verify the composition because the dependency surface is right there in the signature.
 
-Without the pattern, composition is guesswork. With it, composition is type intersection. The constraint _is_ the enabler.
+Without the pattern, composition is guesswork. With it, composition is type intersection.
 
 ---
 
@@ -456,7 +454,7 @@ Without the pattern, composition is guesswork. With it, composition is type inte
 
 I hear you. Having to pass deps everywhere sounds tedious. Won't your call sites become cluttered with infrastructure?
 
-Here's the trick: you wire deps _once_ at the boundary.
+You wire deps _once_ at the boundary.
 
 ```typescript
 // user-service/index.ts
@@ -515,7 +513,7 @@ const app = createApp({ userService });
 app.listen(3000);
 ```
 
-The Composition Root is the _only_ place that knows about all dependencies. Your handlers, routes, and business functions don't know how deps were created. They just receive them.
+The Composition Root is the _only_ place that knows about all dependencies. Your handlers, routes, and business functions don't know how deps were created. They receive them.
 
 ```mermaid
 graph TD
@@ -598,11 +596,11 @@ await notify({ name: 'Alice' }, { notify: mockNotify });
 
 ### Still testable, still injectable
 
-Binding dependencies with partial application doesn't reduce testability or flexibility. It just moves dependency passing from _every call_ to the _composition boundary_.
+Binding dependencies with partial application doesn't reduce testability or flexibility. It moves dependency passing from _every call_ to the _composition boundary_.
 
 - **Tests** call the core function directly: `fn(args, deps)`
 - **App code** uses a wired function: `fnWithDeps(deps)(args)`
-- **Injection** still happens via `deps`: you're simply injecting once instead of repeatedly.
+- **Injection** still happens via `deps`: you're injecting once instead of repeatedly.
 
 ```typescript
 // core stays pure-ish and easy to test
@@ -621,7 +619,7 @@ You can write everything curried, but keeping the implementation in the explicit
 - **fewer accidental closures in hot paths**
 - **a consistent signature for wrappers** (retry/log/trace/etc.)
 
-So: implement in the explicit form, then use partial application at the boundary to derive ergonomic call shapes. This is a language-level technique, not a framework pattern.
+Implement in the explicit form, then use partial application at the boundary to derive ergonomic call shapes. This is a language-level technique, not a framework pattern.
 
 ### Optional: a tiny helper (keeps examples tight)
 
@@ -638,7 +636,7 @@ export const bindDeps =
 const notifyViaSlack = bindDeps(notify)(slackDeps);
 ```
 
-This helper is just a partial application utility. It reinforces that the underlying pattern stays `fn(args, deps)`: we're just binding `deps` once at the boundary.
+This helper is a partial application utility. It reinforces that the underlying pattern stays `fn(args, deps)`: bind `deps` once at the boundary.
 
 ---
 
@@ -655,9 +653,7 @@ This is intentional: **`args` and `deps` have different lifetimes**.
 
 Keeping them separate makes dependency bloat harder to hide, keeps call sites focused on intent, and makes composition easier: bind `deps` once and pass `args` freely.
 
-Different lifetimes deserve different parameters.
-
-> Note: We intentionally avoid currying here. While it works, explicit parameters keep stack traces simpler and avoid unnecessary closures in hot paths.
+> Note: We avoid currying here. While it works, explicit parameters keep stack traces simpler and avoid unnecessary closures in hot paths.
 
 ### Why Not `fn(args, deps, opts)`?
 
@@ -670,7 +666,7 @@ You'll sometimes see people add a third parameter like `fn(args, deps, opts)`. D
 
 A third `opts` bag usually becomes a dumping ground that hides domain meaning and makes call sites harder to read.
 
-The rule is simple: **per-call = `args`**, **per-app/per-module = `deps`**. No third bucket.
+The rule: **per-call = `args`**, **per-app/per-module = `deps`**. No third bucket.
 
 ### What About Context?
 
@@ -729,7 +725,7 @@ This keeps the core message clean:
 
 → See [OpenTelemetry patterns](../opentelemetry) for the complete tracing approach.
 
-If context changes business behavior (e.g. tenant isolation or authorization), model it explicitly in `args` or as request-scoped `deps` -not as "extra data."
+If context changes business behavior (e.g. tenant isolation or authorization), model it explicitly in `args` or as request-scoped `deps`, not as "extra data."
 
 ### Typing Deps Fields: `typeof` for Discoverability
 
@@ -759,7 +755,7 @@ type CreateUserDeps = {
 };
 ```
 
-Use a named type alias only when the contract is intentionally looser than a specific implementation — e.g. the dep could be _any_ function with that shape, not just one particular function.
+Use a named type alias only when the contract is intentionally looser than a specific implementation, e.g. the dep could be _any_ function with that shape, not one particular function.
 
 **Rule of thumb:** if there's one real implementation that gets injected at the composition root, use `typeof`. If the dep is a generic capability (like `logger: Logger`), a named type is fine.
 
@@ -787,11 +783,11 @@ For business logic? Prefer functions.
 
 ## The Rules
 
-1. **Per-function deps.** Avoid god objects. Each function declares exactly what it needs. Do not group functions into objects for injection—that recreates the same over-supply problem as classes; inject each function (or minimal deps) individually.
+1. **Per-function deps.** Avoid god objects. Each function declares exactly what it needs. Do not group functions into objects for injection, which recreates the same over-supply problem as classes; inject each function (or minimal deps) individually.
 
 2. **Contract-first for inputs, intentional for outputs.** Define `Args` and `Deps` types explicitly before the function (they are the contract). For return types, derive for internal helpers using `Awaited<ReturnType<typeof fn>>`, but define explicitly for boundary/public APIs to prevent accidental contract changes. Never use `Parameters<typeof fn>` for Args/Deps.
 
-3. **Inject what you want to mock.** infrastructure (db, logger) and collaborators. Import pure utilities you'll never mock (think `lodash`, `slugify`, math helpers -only inject things that hit network, disk, or the clock).
+3. **Inject what you want to mock.** infrastructure (db, logger) and collaborators. Import pure utilities you won't mock (think `lodash`, `slugify`, math helpers), and inject only things that hit network, disk, or the clock.
 
    Don't inject pure functions:
 
@@ -957,8 +953,8 @@ export type GetUserDeps = Parameters<typeof getUser>[1]; // ❌ Wrong direction
 
 Why this is bad:
 
-- Args and Deps are your API contract - they should be stable and explicit
-- Callers depend on these types - changing function parameters silently changes the contract
+- Args and Deps are your API contract, so they should be stable and explicit
+- Callers depend on these types, so changing function parameters silently changes the contract
 - Contract-first makes the interface intentional, not accidental
 
 ### For Functions Returning `Result<T, E>` (awaitly)
@@ -1024,7 +1020,7 @@ export type GetUserValue = GetUserReturn extends { ok: true; value: infer V }
 - **Args and Deps**: Always define explicitly before the function (contract-first)
 - **Return types**: Derive for internal helpers, define explicitly for boundary/public APIs
 
-🚫 **Never** derive `Args` or `Deps` using `Parameters<typeof fn>` - define them explicitly as the contract.
+🚫 **Never** derive `Args` or `Deps` using `Parameters<typeof fn>`; define them explicitly as the contract.
 
 ---
 
@@ -1324,15 +1320,15 @@ For I/O-bound web applications, object allocation is orders of magnitude faster 
 
 For typical web services, **don't optimize for GC**. Optimize for correctness, testability, and maintainability.
 
-> Once you see `fn(args, deps)` as "logic + environment", everything else (testing, composition, wiring, frameworks) falls out naturally.
+> Once you see `fn(args, deps)` as "logic + environment", everything else (testing, composition, wiring, frameworks) falls out.
 
 ---
 
 ## What's Next
 
-Alright, so we have clean functions with explicit deps. But there's something we've glossed over.
+We have clean functions with explicit deps. But there's something we've glossed over.
 
-When someone calls `getUser({ userId: '123' }, deps)`... how do we know `userId` is actually valid? What if it's an empty string? What if `createUser` receives an email that's not actually an email?
+When someone calls `getUser({ userId: '123' }, deps)`... how do we know `userId` is valid? What if it's an empty string? What if `createUser` receives an email that isn't an email?
 
 Our functions have clean signatures, but right now they're _trusting_ that the data they receive is correct. And in a web application, data comes from the outside world. It comes from HTTP requests, queue messages, CLI arguments. It comes from users who might type anything.
 

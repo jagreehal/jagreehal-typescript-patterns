@@ -7,15 +7,13 @@ description: Structure TypeScript monorepos for debuggability, shared configurat
 
 ---
 
-Let's talk about monorepos.
-
-Everyone loves the idea: shared code, one repo, fast iteration. But most monorepo setups quietly fail at the thing that matters most: being able to debug your own code.
+The pitch is shared code, one repo, fast iteration. Most monorepo setups fail at debugging your own code.
 
 ## The Problem
 
-It's Tuesday afternoon. You're debugging a failure in your web app. You step into the SDK code... and land in minified JavaScript. No sourcemaps. No line numbers. Just `t.e(r).then(n=>n.o)`.
+It's Tuesday afternoon. You're debugging a failure in your web app. You step into the SDK code and land in minified JavaScript: no sourcemaps, no line numbers, `t.e(r).then(n=>n.o)`.
 
-You check the import: it points to `dist/index.js`. You wanted to debug the actual TypeScript. Now you're grepping through `node_modules` trying to find the original source.
+You check the import: it points to `dist/index.js`. You wanted to debug the TypeScript. Now you're grepping through `node_modules` trying to find the original source.
 
 Or worse: your SDK has a bug, you fix it, but you forgot to rebuild. The app still reads stale output. You spend an hour debugging code that doesn't match what you're reading.
 
@@ -28,7 +26,7 @@ The patterns below solve those two failures first, then layer on consistency and
 
 ### Recommended Layout
 
-Before diving in, here's the structure we're targeting:
+The structure we're targeting:
 
 ```
 monorepo/
@@ -62,7 +60,7 @@ For internal monorepo development, we prefer importing source directly for the f
 > **Assumption**: This assumes your app consumes the SDK via workspace linking (pnpm/yarn/npm workspaces), not via an installed npm tarball.
 > TS paths won't help consumers debug your published output. That's what sourcemaps are for.
 
-The fix is simple: configure TypeScript paths to point to source files, not compiled output.
+The fix: point TypeScript paths at source files, not compiled output.
 
 ```mermaid
 graph LR
@@ -97,13 +95,27 @@ In your consuming app's `tsconfig.json`:
 }
 ```
 
-Now when you import from `@myorg/sdk/queries`, TypeScript resolves it to the source file. Your debugger steps through actual TypeScript. Hot reload catches changes instantly.
+> **TypeScript 7:** `baseUrl` is gone. Path values resolve relative to the config file that defines them — so keep explicit prefixes like `./src/*` and `../../packages/...`, not bare `src/*` that once depended on `baseUrl`.
+
+Now when you import from `@myorg/sdk/queries`, TypeScript resolves it to the source file. Your debugger steps through TypeScript. Hot reload catches changes.
 
 > **Bundler configuration required.** TS paths are a type-checker feature; your bundler (or Node) still needs its own resolver to load the same files. They must agree. Your bundler needs to know about workspace packages too:
 > - **Next.js**: Add `transpilePackages: ['@myorg/sdk']` in `next.config.js`
-> - **Vite**: Use `vite-tsconfig-paths` plugin or configure `resolve.alias`
+> - **Vite**: Enable `resolve.tsconfigPaths: true` (opt-in; default `false` because of a small resolution cost)
 > - **Webpack**: Use `tsconfig-paths-webpack-plugin`
 
+```typescript
+// vite.config.ts
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  resolve: {
+    tsconfigPaths: true,
+  },
+});
+```
+
+Vite’s path resolution respects each `tsconfig.json`’s `files` and `include` rules. CSS and SCSS imports can work when those extensions are explicitly included; Less is not supported.
 ### The Tradeoff
 
 Avoid **self-imports** inside a package (e.g. `@myorg/sdk/logger` from within `packages/sdk`). They couple your build to path-alias tooling and often fail outside TypeScript.
@@ -113,7 +125,7 @@ Avoid **self-imports** inside a package (e.g. `@myorg/sdk/logger` from within `p
 
 ### When TS Paths Aren't Enough
 
-TS paths solve the staleness problem (always importing fresh source) but don't fully solve debuggability if you're consuming *published* packages. For that, you need sourcemaps. If your SDK is published to npm rather than consumed via workspace links:
+TS paths solve the staleness problem (always importing fresh source) but don't solve debuggability if you're consuming *published* packages. For that, you need sourcemaps. If your SDK is published to npm rather than consumed via workspace links:
 
 - Set `sourcemap: true` in your build config (tsup, tsc, esbuild, etc.)
 - Publish `.map` files alongside your JS output
@@ -189,17 +201,17 @@ The key settings:
 - **`cwd`**: Set working directory to the package root
 - **`skipFiles`**: Skip Node internals for cleaner stack traces
 
-Now F5 launches the app and breakpoints in SDK source files work directly.
+Now F5 launches the app and breakpoints in SDK source files work.
 
 ### "Won't This Slow Down Type-Checking?"
 
-I hear you. If TypeScript is resolving into raw source files across packages, won't builds crawl?
+If TypeScript is resolving into raw source files across packages, won't builds crawl?
 
-In practice, often no. TypeScript's incremental compilation (`tsBuildInfoFile`) and project references handle this well. The bottleneck in most monorepos is I/O and dependency resolution, not type-checking source files.
+Usually no — and TypeScript 7 makes this even less of a concern. The native compiler is roughly an order of magnitude faster, and `tsc --build` can parallelize project-reference builds with `--builders`. Incremental compilation (`tsBuildInfoFile`) still helps. The bottleneck in most monorepos remains I/O and dependency resolution, not type-checking source files.
 
 If you *do* hit slowdowns with 10+ packages, consider:
 
-- **Project references**: Let each package emit `.d.ts` files and reference those instead of raw source
+- **Project references**: Let each package emit `.d.ts` files and reference those instead of raw source; tune `--builders` for parallel builds
 - **Turborepo caching**: Avoid re-checking unchanged packages entirely
 
 But start with the simple approach. Optimize when profiling shows a real problem.
@@ -237,8 +249,8 @@ graph TD
     "strict": true,
     "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,
-    "module": "node16",
-    "moduleResolution": "node16",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
@@ -250,8 +262,7 @@ graph TD
 
 The root config sets `noEmit: true` for type-checking only, not building. Each package overrides this when it needs to emit.
 
-> **ESM-first?** If you're all-in on ESM with `"type": "module"` in your packages, consider `module`/`moduleResolution: "NodeNext"` instead of `node16` for closer runtime parity with Node.js behavior.
-
+> **Node packages:** For code that runs directly in Node (APIs, CLIs, workers), use `module` / `moduleResolution: "nodenext"` instead of `ESNext` / `bundler`. Keep `bundler` for apps and packages that go through Vite, Next.js, or similar.
 ```json
 // packages/sdk/tsconfig.json
 {
@@ -319,15 +330,15 @@ The pattern: **import → spread → extend**. See [Enforcing Patterns with ESLi
 
 The same principle from [Composition Patterns](..//composition) applies to packages: **don't extract until you have three proven uses and a stable interface.**
 
-Premature shared packages create coordination overhead versioning, ownership ambiguity, and deprecation debt. Duplication is the price of agility.
+Premature shared packages create coordination overhead: versioning, ownership ambiguity, and deprecation debt. Duplicating code costs less than that coordination.
 
 ---
 
 ## Granular Exports: Avoid Barrel Files
 
-Here's a pattern that seems helpful but causes real pain at scale.
+This pattern seems helpful but causes pain at scale.
 
-> This matters whether you publish to npm or just consume via workspace links. For internal packages, it's about API discipline and bundle hygiene. For published packages, it's also about stable import paths.
+> This matters whether you publish to npm or consume via workspace links. For internal packages, it's about API discipline and bundle hygiene. For published packages, it's also about stable import paths.
 
 A **barrel file** is an `index.ts` that re-exports everything from other modules using `export * from`. It looks convenient:
 
@@ -340,7 +351,7 @@ export * from './orders';
 // ... 30 more exports
 ```
 
-The web app imports one function: `import { formatOrder } from '@myorg/sdk'`. In theory, tree-shaking should remove the rest. In practice, barrels cause problems beyond just bundle size:
+The web app imports one function: `import { formatOrder } from '@myorg/sdk'`. In theory, tree-shaking should remove the rest. In practice, barrels cause problems beyond bundle size:
 
 - **API hygiene**: Barrels blur module boundaries and encourage importing from a single huge surface
 - **Accidental side-effects**: Re-exporting modules that execute code on import defeats tree-shaking
@@ -407,7 +418,7 @@ Map each entry point in package.json:
 
 Notice there's no root `"."` export. This is intentional: consumers *must* import from `@myorg/sdk/logger`, not `@myorg/sdk`. If you prefer discoverability, you can add a `"."` export as a type-only or thin entry point, but avoid `export * from` barrels.
 
-The `sideEffects: false` tells bundlers they can safely tree-shake unused exports. Only set this if your modules are actually side-effect free on import (no top-level code that runs just by importing).
+The `sideEffects: false` tells bundlers they can tree-shake unused exports. Only set this if your modules are side-effect free on import (no top-level code that runs just by importing).
 
 ### Consumer Usage
 
@@ -474,7 +485,7 @@ packages:
 }
 ```
 
-`dependsOn: ["^build"]` means "build my dependencies first." When you run `turbo build` in the web app, Turborepo automatically builds the SDK first. No manual coordination.
+`dependsOn: ["^build"]` means "build my dependencies first." When you run `turbo build` in the web app, Turborepo builds the SDK first. No manual coordination.
 
 > **Note**: Each package must define matching scripts (`build`, `lint`, `test`) in its `package.json` for Turborepo to orchestrate them. Each package's build script defines its own outputs; Turborepo caches per-package. The `outputs` array lists all possible outputs across packages: `dist/**` for SDK packages, `.next/**` for Next.js apps, etc.
 
@@ -482,13 +493,13 @@ packages:
 
 ## The Rules
 
-1. **Use TS paths for source debugging.** Point consuming apps to `src/`, not `dist/`. Avoid TS paths inside packages prefer relative imports (`../logger`) within a package.
+1. **Use TS paths for source debugging.** Point consuming apps to `src/`, not `dist/`. Avoid TS paths inside packages; prefer relative imports (`../logger`) within a package.
 
 2. **Extend, don't copy.** Root configs for tsconfig, ESLint, Prettier. Packages extend and add specifics.
 
 3. **Duplicate first, extract later.** Wait for three uses and a stable interface before creating shared packages.
 
-4. **Explicit exports only.** Use tsup entry points. Ban `export *` with ESLint. Your bundle size will thank you.
+4. **Explicit exports only.** Use tsup entry points. Ban `export *` with ESLint to keep bundles lean.
 
 5. **Orchestrate with Turborepo.** Let dependency ordering happen automatically with `dependsOn: ["^build"]`.
 

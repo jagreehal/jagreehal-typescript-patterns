@@ -1,19 +1,17 @@
 ---
 title: API Design Patterns
-description: Build production-ready HTTP APIs with clean handlers, proper error mapping, health checks, and operational excellence.
+description: Build production-ready HTTP APIs with clean handlers, consistent error mapping, health checks, and graceful shutdown.
 ---
 
 *Previously: [Configuration at the Boundary](..//configuration). We learned to validate config at startup. Now let's build APIs that use all these patterns together.*
 
 ---
 
-You've built functions with explicit deps. You've validated at the boundary. You've returned Results instead of throwing. You've made everything observable and resilient.
+You've built functions with explicit deps, validated at the boundary, and returned Results instead of throwing. Your code is observable and resilient.
 
-Now you need to expose it to the world via HTTP.
+Now you need to expose it over HTTP.
 
-This is where everything comes together and where many teams stumble. They've got clean internal code, but their API layer is a mess of inconsistent error formats, missing health checks, and ad-hoc security.
-
-Let's fix that.
+Many teams stumble here. They have clean internal code, but their API layer is a mess of inconsistent error formats, missing health checks, and ad-hoc security.
 
 ---
 
@@ -48,8 +46,6 @@ Handlers should be thin. They don't contain business logic. They:
 1. Receive HTTP input (already validated by the framework)
 2. Call business functions with validated args and injected deps
 3. Map the Result to an HTTP response
-
-That's it.
 
 ---
 
@@ -106,7 +102,7 @@ Validation ensures data is shaped correctly. Sanitization normalizes it:
 
 ## Response Schemas: Control Your Output
 
-Define what goes out, not just what comes in:
+Define what goes out, the same way you define what comes in:
 
 ```typescript
 const UserResponse = z.object({
@@ -261,7 +257,7 @@ throw new ORPCError(result.error, {
 
 > **Rule: `ORPCError(code)` must match `ErrorResponse.code`**. Using the same string for both simplifies logs, metrics, and client error handling. For example, `throw new ORPCError("NOT_FOUND", { data: createErrorResponse("NOT_FOUND", ...) })`. Never mix codes like `ORPCError("BAD_REQUEST")` with `createErrorResponse("MISSING_FIELD")`.
 
-**Why this matters:**
+**What a consistent envelope gives you:**
 - Clients write one error handler that works everywhere
 - Observability tools can parse and aggregate errors consistently
 - `requestId` enables support to correlate user reports with logs
@@ -512,7 +508,7 @@ graph TD
 
 ## Graceful Shutdown
 
-Don't just `process.exit()`. Finish in-flight requests first:
+Don't `process.exit()` immediately. Finish in-flight requests first:
 
 ```typescript
 let isShuttingDown = false;
@@ -588,7 +584,7 @@ process.on("unhandledRejection", (reason) => {
 
 ## Request Context: Logging and Tracing
 
-Every request should have context that flows through all operations:
+Every request should carry context through its operations:
 
 ```typescript
 type AppContext = {
@@ -912,8 +908,8 @@ curl -X POST https://api.example.com/orders \
   -d '{"productId": "...", "quantity": 1}'
 ```
 
-**Why this matters:**
-- Client times out → retries → without idempotency, you get duplicate orders
+**Without idempotency keys:**
+- Client times out → retries → you get duplicate orders
 - Load balancer retries during deploy → duplicate database records
 - User double-clicks submit button → double charges
 
@@ -958,9 +954,9 @@ Benefits:
 
 ### Non-production accounts and seeded data
 
-When you design your API, think about the developer experience for the teams who will call it. Provide non-production (sandbox) accounts that come pre-populated with realistic example data (for example, customers in different states, orders in various statuses, and some deliberate error cases) so they can call your API immediately without a setup script. This makes tutorials, API explorers, and SDK examples much easier to follow and reduces the time to first successful integration.
+When you design your API, consider the developer experience for teams who will call it. Provide non-production (sandbox) accounts pre-populated with realistic example data (customers in different states, orders in various statuses, and some deliberate error cases) so teams can call your API without a setup script. Tutorials, API explorers, and SDK examples become easier to follow, and the time to first successful integration drops.
 
-Recently, when evaluating payment providers, some offered to pre-populate our non-production account with realistic data. That meant we could explore queries and integrate with our UI straight away, instead of first working out how to create “good enough” test data. The inspect-and-adapt loop was much shorter and the experience was noticeably better because we did not have to think about setup; they showed us the value instead of telling us about it.
+When we evaluated payment providers, some offered to pre-populate our non-production account with realistic data. We could explore queries and integrate with our UI right away, instead of working out how to create “good enough” test data first. The inspect-and-adapt loop was shorter and the experience was better: we did not have to think about setup, and they demonstrated the value rather than describing it.
 
 Pair this with the sandbox and mocking patterns from [Testing External Infrastructure](../testing-external-services), so both you and your customers can trigger deterministic success and failure cases while developing and testing.
 
@@ -1205,7 +1201,7 @@ app.use((req, next) => {
 
 ## Route File Organization
 
-As APIs grow, file organization becomes critical. The patterns from [Functions Over Classes](..//functions) apply here: "Group only when functions genuinely travel together (often at boundaries: routers)."
+As APIs grow, how you organize files matters more. The patterns from [Functions Over Classes](..//functions) apply here: "Group only when functions genuinely travel together (often at boundaries: routers)."
 
 ### One File Per Route
 
@@ -1387,7 +1383,7 @@ With the `fn(args, deps)` pattern, testing becomes straightforward. Explicit dep
 
 ### Critical Rules
 
-🚨 **Test names describe outcomes, not actions.** "returns user when ID exists" not "test getUser". The name IS the specification.
+🚨 **Test names describe outcomes, not actions.** "returns user when ID exists" not "test getUser". The name is the specification.
 
 🚨 **Assert specific values, not types.** `expect(result).toEqual({ id: 1, name: "Alice" })` not `expect(result).toBeDefined()`.
 
@@ -1744,7 +1740,7 @@ Over these patterns, we've constructed a complete TypeScript application archite
 7. **[Configuration](..//configuration)**: Validate at startup, secrets in memory
 8. **[API design](..//api)**: This pattern: handlers, health checks, security
 
-Each pattern builds on the previous. They're not independent. They're a cohesive architecture.
+Each pattern builds on the previous to form a cohesive architecture.
 
 ---
 
@@ -1775,7 +1771,7 @@ Each pattern builds on the previous. They're not independent. They're a cohesive
 
 ## What's Next
 
-We've built the complete application architecture. But patterns are only as good as their enforcement. How do you ensure these patterns are followed, especially with AI-generated code?
+We've built the complete application architecture. Patterns only help when they're enforced. How do you ensure these patterns are followed, especially with AI-generated code?
 
 ---
 
