@@ -11,7 +11,7 @@ Your database connection drops for a second. Your HTTP client times out. An exte
 
 These failures are transient. Wait a moment, try again, and the call goes through. Right now your functions fail on the first error: the user sees an error page and the operation fails.
 
-It's 3pm on Tuesday. Your payment provider has a 2-second outage that happens once a month and lasts seconds. Every checkout in that window fails. Users see "Payment failed," your support queue fills up, and your Slack channel lights up. By the time you check, the provider is back. The incident lasted 2 seconds but generated 50 support tickets.
+It's 3pm on Tuesday. Your payment provider has a 2-second outage that happens once a month and lasts seconds. Every checkout in that window fails. Users see "Payment failed," your support queue fills up, and your Slack channel lights up. You check, and the provider is already back. The incident lasted 2 seconds but generated 50 support tickets.
 
 Should you add retry logic?
 
@@ -43,7 +43,7 @@ async function getUser(args: { userId: string }, deps: GetUserDeps) {
 
 Half of your clean function is now retry logic. The business logic, find the user and return it, is buried.
 
-You'd repeat this for every function that touches infrastructure, then add timeouts and circuit breakers on top. The functions become unreadable.
+You'd repeat this for every function that touches infrastructure, then add timeouts and circuit breakers on top, until none of them read cleanly.
 
 Where does resilience belong?
 
@@ -77,13 +77,14 @@ You add resilience at the workflow level. Your business functions stay clean: th
 Retry and timeout are built into `awaitly`. Use them at the workflow level:
 
 ```typescript
-import { createWorkflow } from 'awaitly/workflow';
+import { createWorkflow } from 'awaitly';
 
 const loadUserData = createWorkflow({ getUser, getPosts });
 
-const result = await loadUserData(async (step) => {
-  // Retry with exponential backoff
+const result = await loadUserData.run(async ({ step }) => {
+  // Retry with exponential backoff (every step takes a string ID first)
   const user = await step.retry(
+    'getUser',
     () => getUser({ userId }, deps),
     {
       attempts: 3,
@@ -96,6 +97,7 @@ const result = await loadUserData(async (step) => {
 
   // Timeout protection
   const posts = await step.withTimeout(
+    'getPosts',
     () => getPosts({ userId: user.id }, deps),
     { ms: 2000 }
   );
@@ -115,6 +117,28 @@ async function getUser(args: { userId: string }, deps: { db: Database }) {
 
 They don't know about retries or timeouts. The workflow handles resilience.
 
+### Per-dep policies
+
+When a dependency should *always* get the same policy, declare it once where you wire the deps instead of repeating options at every call site. `retry`, `timeout`, and `fallback` wrap the function, and the call site stays a plain `steps.getUser(...)`:
+
+```typescript
+import { createWorkflow, retry, timeout } from 'awaitly';
+
+const loadUserData = createWorkflow({
+  // timeout applies per attempt; retry wraps it
+  getUser: retry(timeout(getUser, 2000), { attempts: 3, backoff: 'exponential' }),
+  getPosts,
+});
+
+const result = await loadUserData.run(async ({ steps }) => {
+  const user = await steps.getUser({ userId }, deps);
+  const posts = await steps.getPosts({ userId: user.id }, deps);
+  return { user, posts };
+});
+```
+
+`timeout()` adds `TimeoutError` to the error union. Use `step.retry()` / `step.withTimeout()` when a single call site needs a different policy.
+
 ---
 
 ## Why Workflow-Level Retry?
@@ -125,7 +149,7 @@ They do one thing: business logic. The workflow handles resilience.
 
 ### 2. Consistent Policy
 
-Every call in a workflow can use the same retry policy. No "some code paths retry, some don't" drift.
+Every call in a workflow can use the same retry policy, so you avoid drift where some code paths retry and others don't.
 
 ### 3. No Double Retry
 
@@ -134,6 +158,7 @@ If you retry at both workflow and function levels, you get multiplicative attemp
 ```typescript
 // BAD: 3 × 3 = 9 attempts!
 const user = await step.retry(
+  'getUser',
   () => getUserWithRetry(args, deps),  // Already retries internally
   { attempts: 3 }
 );
@@ -143,7 +168,7 @@ By keeping retry at the workflow level, you avoid this explosion.
 
 **The Blast Radius Problem:** Without centralized retry policy, a minor blip in a downstream service can become a self-inflicted DDoS. If every layer retries 3×, and you have 3 layers, a single failure becomes 27 requests. Multiply by 100 concurrent users and you've created a retry storm that prevents the failing service from recovering.
 
-You add retries to make things more reliable. The database has a brief hiccup, your retries kick in at every layer for every user, and the database, already struggling, receives 27× the normal load. Instead of recovering, it crashes harder. Your retries made the outage worse.
+You add retries to make things more reliable. The database has a brief hiccup, your retries kick in at every layer for every user, and the database, already struggling, receives 27× the normal load. Instead of recovering, it crashes harder, and your retries have made the outage worse.
 
 ```mermaid
 graph TD
@@ -167,7 +192,7 @@ graph TD
     linkStyle 4 stroke:#0f172a,stroke-width:3px
 ```
 
-**Solution:** Retry at ONE level only: the workflow level. Business functions and infrastructure clients should not retry internally.
+**Solution:** Retry at one level only: the workflow level. Business functions and infrastructure clients should not retry internally.
 
 > **Note:** This includes composition-level `withRetry` wrappers (see [Wrapping](..//composition#wrapping-add-behavior-without-modifying)). If you use `step.retry()` in workflows, don't also wrap channels with `withRetry`. Pick one layer for retry policy.
 
@@ -198,7 +223,7 @@ For writes, either:
 
 ## Which Errors Should You Retry?
 
-Not all errors are retryable. Some are permanent failures where retrying won't help.
+Some errors are permanent, and retrying them won't help.
 
 | Error Type | Retry? | Why |
 | ---------- | ------ | --- |
@@ -210,15 +235,16 @@ Not all errors are retryable. Some are permanent failures where retrying won't h
 | `VALIDATION_FAILED` | ✗ No | Input is invalid, fix the input |
 | `FATAL` | ✗ No | Unrecoverable, stop trying |
 
-Use the `retryOn` predicate to control this:
+Use the `shouldRetry` predicate to control this (`retryIf` is an alias):
 
 ```typescript
 const data = await step.retry(
+  'fetchFromApi',
   () => fetchFromApi(),
   {
     attempts: 3,
     backoff: 'exponential',
-    retryOn: (error) => {
+    shouldRetry: (error) => {
       // Only retry transient errors
       const retryable = ['TIMEOUT', 'CONNECTION_ERROR', 'RATE_LIMITED'];
       return retryable.includes(error);
@@ -238,11 +264,12 @@ Now permanent failures fail fast instead of wasting time on doomed retries.
 Every external call should have a timeout. Don't let one slow dependency hang your entire request:
 
 ```typescript
-const result = await workflow(async (step) => {
+const result = await workflow.run(async ({ step }) => {
   // Timeout after 2 seconds
   const data = await step.withTimeout(
+    'slowOperation',
     () => slowOperation(),
-    { ms: 2000, name: 'slow-op' }
+    { ms: 2000 }
   );
 
   return data;
@@ -255,6 +282,7 @@ With AbortSignal for cancellable operations:
 
 ```typescript
 const data = await step.withTimeout(
+  'fetchData',
   (signal) => fetch('/api/data', { signal }),
   { ms: 5000, signal: true }  // pass signal to operation
 );
@@ -267,9 +295,10 @@ const data = await step.withTimeout(
 Combine retry and timeout so each attempt gets its own timeout:
 
 ```typescript
-const result = await workflow(async (step) => {
+const result = await workflow.run(async ({ step }) => {
   // Retry up to 3 times, with 2s timeout per attempt
   const data = await step.retry(
+    'fetchData',
     () => fetchData(),
     {
       attempts: 3,
@@ -281,20 +310,19 @@ const result = await workflow(async (step) => {
 });
 ```
 
-This ensures that:
+With this setup:
 
 - Each retry attempt has a 2-second deadline
 - If all 3 attempts timeout, the workflow fails
 - The total time is bounded (3 attempts × 2s = 6s max)
 
-**Important:** The timeout applies per attempt, not to the entire retry block. If you need a global timeout for the whole operation, wrap everything in `step.withTimeout()`:
+The timeout applies per attempt, not to the entire retry block. If you need a global timeout for the whole operation, wrap everything in `step.withTimeout()`:
 
 ```typescript
 // Global timeout: entire operation must complete in 10s
 const data = await step.withTimeout(
-  async () => {
-    return step.retry(() => fetchData(), { attempts: 3 });
-  },
+  'fetchDataBudget',
+  async () => ok(await step.retry('fetchData', () => fetchData(), { attempts: 3 })),
   { ms: 10000 }
 );
 ```
@@ -309,7 +337,7 @@ The workflow library records resilience events in your traces when you use OpenT
 - `step_timeout` - When a step times out
 - `step_retries_exhausted` - When all retry attempts are exhausted
 
-Your traces show more than "this call failed." They show "this call failed, retried 3 times, then succeeded."
+Instead of "this call failed," your traces show "this call failed, retried 3 times, then succeeded."
 
 ### Recommended Defaults
 
@@ -348,10 +376,10 @@ With jitter:
 Always enable jitter in production:
 
 ```typescript
-step.retry(() => fetchData(), {
+step.retry('fetchData', () => fetchData(), {
   attempts: 3,
   backoff: 'exponential',
-  jitter: true,  // Randomizes wait times
+  jitter: true,  // Randomizes wait times (on by default)
 });
 ```
 
@@ -359,7 +387,7 @@ step.retry(() => fetchData(), {
 
 If a dependency fails repeatedly, retries can make things worse. While the service is down, you're still sending requests (wasting resources) and delaying responses to users.
 
-**Circuit breakers** stop the bleeding. After N consecutive failures, the circuit "opens" and rejects requests for a cooldown period. This:
+**Circuit breakers** cut off calls to a failing dependency. After N consecutive failures, the circuit "opens" and rejects requests for a cooldown period. This:
 
 - Gives the failing service time to recover
 - Returns fast errors instead of slow timeouts
@@ -368,7 +396,7 @@ If a dependency fails repeatedly, retries can make things worse. While the servi
 `awaitly` includes `createCircuitBreaker` for protecting dependencies:
 
 ```typescript
-import { createCircuitBreaker, isCircuitOpenError } from 'awaitly/reliability';
+import { createCircuitBreaker, isCircuitOpenError } from 'awaitly';
 
 // Create a circuit breaker
 const apiBreaker = createCircuitBreaker('external-api', {
@@ -378,10 +406,11 @@ const apiBreaker = createCircuitBreaker('external-api', {
   windowSize: 60000,        // Count failures within this window
 });
 
-const result = await workflow(async (step) => {
+const result = await workflow.run(async ({ step }) => {
   // Wrap the step call with the circuit breaker
   // If circuit is open, execute() throws CircuitOpenError which step.try() catches
   const data = await step.try(
+    'fetchFromExternalApi',
     () => apiBreaker.execute(() => fetchFromExternalApi()),
     { error: 'SERVICE_UNAVAILABLE' as const }
   );
@@ -395,11 +424,11 @@ The circuit breaker tracks failures and opens when they cross the threshold, pre
 You can also access timeout metadata:
 
 ```typescript
-import { isStepTimeoutError, getStepTimeoutMeta } from 'awaitly/workflow';
+import { isStepTimeoutError, getStepTimeoutMeta } from 'awaitly';
 
 if (!result.ok && isStepTimeoutError(result.error)) {
   const meta = getStepTimeoutMeta(result.error);
-  console.log(`Timed out after ${meta?.timeoutMs}ms on attempt ${meta?.attempt}`);
+  console.log(`${meta?.stepName} timed out after ${meta?.timeoutMs}ms on attempt ${meta?.attempt}`);
 }
 ```
 
@@ -412,14 +441,15 @@ Sometimes you need to retry a multi-step operation. Use `step.retry()` to wrap t
 ```typescript
 const syncUserToProvider = createWorkflow({ findUser, syncUser, markSynced });
 
-const result = await syncUserToProvider(async (step) => {
+const result = await syncUserToProvider.run(async ({ step }) => {
   // Retry the whole operation
   const user = await step.retry(
+    'syncUserToProvider',
     async () => {
-      const user = await step(() => findUser({ userId }, deps));
-      await step(() => syncUser({ user }, deps));  // Must be idempotent!
-      await step(() => markSynced({ userId }, deps));
-      return user;
+      const user = await step('findUser', () => findUser({ userId }, deps));
+      await step('syncUser', () => syncUser({ user }, deps));  // Must be idempotent!
+      await step('markSynced', () => markSynced({ userId }, deps));
+      return ok(user);
     },
     {
       attempts: 2,
@@ -458,7 +488,7 @@ const result = await syncUserToProvider(async (step) => {
 ## Full Example
 
 ```typescript
-import { createWorkflow } from 'awaitly/workflow';
+import { createWorkflow, ok, err, type AsyncResult } from 'awaitly';
 
 // Core function stays clean
 async function getUser(
@@ -476,9 +506,10 @@ async function getUser(
 // Workflow adds resilience
 const loadUser = createWorkflow({ getUser });
 
-const result = await loadUser(async (step) => {
+const result = await loadUser.run(async ({ step }) => {
   // Retry with exponential backoff and timeout
   const user = await step.retry(
+    'getUser',
     () => getUser({ userId }, deps),
     {
       attempts: 3,

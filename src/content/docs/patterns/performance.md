@@ -19,7 +19,7 @@ You don't know because you never tested under load.
 
 ## Why Load Testing Matters
 
-Unit tests verify correctness. Integration tests verify the stack works together. But neither answers:
+Unit tests verify correctness, and integration tests verify the stack works together. Neither answers:
 
 - How many concurrent users can we handle?
 - What breaks first under load?
@@ -113,7 +113,7 @@ export default function () {
 }
 ```
 
-> **Why `sleep()`?** In k6, a Virtual User (VU) executes the script in a loop. Without `sleep`, a single VU could generate hundreds of requests per second, accidentally DDoS-ing your local machine. `sleep` simulates realistic human behavior ("think time") between actions, like a user reading a page before clicking. Without it, you're not testing "10 users". You're testing "10 infinite loops hammering your API."
+> **Why `sleep()`?** In k6, a Virtual User (VU) executes the script in a loop. Without `sleep`, a single VU could generate hundreds of requests per second, accidentally DDoS-ing your local machine. `sleep` simulates realistic human behavior ("think time") between actions, like a user reading a page before clicking. Without it, your "10 users" become 10 infinite loops hammering your API.
 
 Run it:
 
@@ -335,7 +335,7 @@ graph TD
     linkStyle 4 stroke:#0f172a,stroke-width:3px
 ```
 
-Without load testing, you'd never see that 1,750ms connection pool wait. The trace looked fine under single requests.
+Without load testing, you'd miss that 1,750ms connection pool wait, because the trace looked fine under single requests.
 
 ### Common Bottlenecks Revealed by Load + Traces
 
@@ -351,7 +351,7 @@ Without load testing, you'd never see that 1,750ms connection pool wait. The tra
 
 ## Setting SLOs and Thresholds
 
-Measuring isn't enough; set expectations. k6 thresholds fail your test if SLOs aren't met:
+Once you measure, set expectations. k6 thresholds fail your test if SLOs aren't met:
 
 ```javascript
 export const options = {
@@ -416,11 +416,11 @@ jobs:
 
 ## From Load Testing to Chaos Engineering
 
-Once you can measure performance, you can break things intentionally. This is **chaos engineering**: testing resilience by injecting failures.
+Once you can measure performance, you can break things on purpose. This is **chaos engineering**: testing resilience by injecting failures.
 
 ### The Idea
 
-Your [resilience patterns](..//resilience) (retries, timeouts, circuit breakers) are only valuable if they work. Chaos engineering proves they do.
+Chaos engineering proves that your [resilience patterns](..//resilience) (retries, timeouts, circuit breakers) work when dependencies fail.
 
 ```mermaid
 graph TD
@@ -626,7 +626,7 @@ k6 run --out influxdb=http://localhost:8086/k6 load-tests/load.js
 2. **Set thresholds.** Tests should fail if SLOs aren't met.
 3. **Connect to traces.** Load + OpenTelemetry = finding real bottlenecks.
 4. **Run in CI.** Catch performance regressions before production.
-5. **Inject chaos.** Prove your resilience patterns actually work.
+5. **Inject chaos.** Prove your resilience patterns work.
 
 ---
 
@@ -639,7 +639,7 @@ We've built a complete architecture:
 - OpenTelemetry (observable)
 - Resilience patterns (reliable)
 - Configuration at startup (fail-fast)
-- TypeScript + ESLint (enforced)
+- TypeScript + Oxlint (enforced)
 - Load testing + chaos (proven under fire)
 
 ---

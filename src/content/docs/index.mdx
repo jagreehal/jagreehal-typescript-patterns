@@ -7,7 +7,7 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 
 Production-ready patterns for building **testable**, **type-safe**, and **observable** TypeScript applications.
 
-Everything starts with a simple function signature:
+Everything starts with one function signature:
 
 ```typescript
 fn(args, deps)
@@ -16,7 +16,7 @@ fn(args, deps)
 - **args**: What varies per call (userId, input data)
 - **deps**: Injected collaborators (database, logger, other functions)
 
-This single pattern unlocks testability, composability, and clarity.
+This signature makes each function testable and composable, and puts its dependencies in plain sight.
 
 ## Where to next?
 
@@ -28,7 +28,7 @@ This single pattern unlocks testability, composability, and clarity.
     Learn the fundamental patterns: functions over classes, validation, typed errors, observability, and resilience.
   </Card>
   <Card title="Enforcement" href="./patterns/configuration">
-    Discover how to enforce patterns through configuration, TypeScript config, and ESLint rules.
+    Enforce patterns through configuration, TypeScript config, and Oxlint rules.
   </Card>
   <Card title="Verification" href="./patterns/performance">
     Learn how to verify your patterns work with performance testing and validation.
@@ -40,6 +40,7 @@ This single pattern unlocks testability, composability, and clarity.
 | Pattern | Problem It Solves | Enforced By |
 | ------- | ----------------- | ----------- |
 | [Testing & Testability](./patterns/testing) | Hidden dependencies | `fn(args, deps)` signature |
+| [Test Quality](./patterns/test-quality) | Green tests that prove nothing | Mutation testing, boundary inputs |
 | [Functions Over Classes](./patterns/functions) | Constructor bloat | Per-function deps |
 | [Validation](./patterns/validation) | Lying type signatures | Zod at the boundary |
 | [Typed Errors](./patterns/errors) | Invisible failures | `Result<T, E>` types |
@@ -49,7 +50,7 @@ This single pattern unlocks testability, composability, and clarity.
 | [Resilience](./patterns/resilience) | Transient failures | `step.retry()` in workflows |
 | [Configuration](./patterns/configuration) | Bad startup state | Env schemas, fail fast |
 | [TypeScript](./patterns/typescript-config) | Type leaks | Strict compiler flags |
-| [ESLint](./patterns/eslint) | Pattern drift | Lint rules that fail builds |
+| [Oxlint](./patterns/lint) | Pattern drift | Lint rules that fail builds |
 | [Performance](./patterns/performance) | Unknown bottlenecks | Load tests + chaos tests |
 
 ## Bonus

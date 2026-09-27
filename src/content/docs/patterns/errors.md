@@ -51,7 +51,7 @@ It's Friday afternoon and production is failing. The error log says `Error: User
 
 ### 2. Throws Bypass Composition
 
-We've worked to make our functions composable, with clean deps and validated args. Exceptions break that.
+We've made our functions composable, with clean deps and validated args, and exceptions break that.
 
 ```typescript
 // You want a linear flow
@@ -97,7 +97,7 @@ catch (error) {
 
 Months later, someone changes "not found" to "does not exist", and your 404s turn into 500s. String matching on error messages is fragile, but exceptions leave you no alternative.
 
-**Match on error types, not message strings.** Typed errors make that possible.
+Typed errors let you match on error types instead of message strings.
 
 ---
 
@@ -154,11 +154,28 @@ graph LR
 
 ## The Result Type
 
-[awaitly](https://github.com/jagreehal/awaitly) provides a `Result<T, E>` type and utilities:
+[awaitly](https://github.com/jagreehal/awaitly) provides the `Result` type and utilities. An operation that can fail returns `AsyncResult<T, E>`, either `ok(value)` or `err(error)`:
 
 ```typescript
-import { ok, err, type Result, type AsyncResult } from 'awaitly';
+import { ok, err, type AsyncResult } from 'awaitly';
 
+const divide = async (a: number, b: number): AsyncResult<number, 'DIVIDE_BY_ZERO'> =>
+  b === 0 ? err('DIVIDE_BY_ZERO') : ok(a / b);
+
+const result = await divide(10, 2);
+
+if (result.ok) {
+  result.value; // number
+} else {
+  result.error; // 'DIVIDE_BY_ZERO', and TypeScript knows that's the only option
+}
+```
+
+The failure is in the return type, so the compiler can see it. `catch (error: unknown)` gives you no type information; `result.error` gives you the full error type.
+
+The shapes:
+
+```typescript
 // Result<T, E> is either success or failure
 type Result<T, E> =
   | { ok: true; value: T }
@@ -167,18 +184,20 @@ type Result<T, E> =
 // AsyncResult<T, E> is just Promise<Result<T, E>>
 type AsyncResult<T, E> = Promise<Result<T, E>>;
 
-// UnexpectedError: run() and createWorkflow() wrap uncaught exceptions
+// UnexpectedError: run() and createWorkflow() catch anything that throws
+// and return it as an UnexpectedError (check with isUnexpectedError()),
 // so the pipeline stays typed even when something throws unexpectedly
-type UnexpectedError = { type: 'UNEXPECTED'; cause: unknown };
 ```
 
 Now your functions look like this:
 
 ```typescript
+import { ok, err, type AsyncResult } from 'awaitly';
+
 async function getUser(
   args: { userId: string },
   deps: GetUserDeps
-): Promise<Result<User, 'NOT_FOUND' | 'DB_ERROR'>> {
+): AsyncResult<User, 'NOT_FOUND' | 'DB_ERROR'> {
   try {
     const user = await deps.db.findUser(args.userId);
     if (!user) return err('NOT_FOUND');
@@ -237,23 +256,50 @@ awaitly composes these checks away.
 
 ### `run()`: the default for multi-step flows
 
-Use `run()` for most multi-step flows. It keeps code flat and exits early on the first error:
+Checking `result.ok` after every call gets tedious fast. `run()` does it for you.
+
+Pass your operations as the first argument. You get back an object with the same keys, and calling one gives you the unwrapped value:
 
 ```typescript
-import { run } from 'awaitly/run';
+import { run, ok, err, type AsyncResult } from 'awaitly';
 
-const result = await run(async (step) => {
-  const user = await step(() => getUser({ userId }, deps));
-  const posts = await step(() => getPosts({ userId: user.id }, deps));
-  const enriched = await step(() => enrichUser({ user, posts }, deps));
-  return { user: enriched };
+type User = { id: string; name: string };
+type Order = { id: number; total: number };
+
+const getUser = async (id: string): AsyncResult<User, 'NOT_FOUND'> =>
+  id === '1' ? ok({ id: '1', name: 'Alice' }) : err('NOT_FOUND');
+
+const getOrders = async (userId: string): AsyncResult<Order[], 'FETCH_ERROR'> =>
+  ok([{ id: 1, total: 99.99 }]);
+
+const result = await run({ getUser, getOrders }, async (s) => {
+  const user = await s.getUser('1');         // User, not Result<User, ...>
+  const orders = await s.getOrders(user.id); // Order[], not Result<Order[], ...>
+  return { user, orders };
 });
+// result.error: 'NOT_FOUND' | 'FETCH_ERROR' | UnexpectedError
 ```
 
-No manual `if (!result.ok)` checks. The `step()` function:
+No manual `if (!result.ok)` checks, and no hand-written error union: TypeScript infers it from the functions you passed. Each call:
 
 - Unwraps the Result if it's `ok`, giving you the value
-- Short-circuits the whole workflow if it's an error
+- Short-circuits the whole flow if it's an error
+
+Functions following the `fn(args, deps)` pattern bind their deps where you pass them in:
+
+```typescript
+const result = await run(
+  {
+    getUser: (userId: string) => getUser({ userId }, deps),
+    getPosts: (userId: string) => getPosts({ userId }, deps),
+  },
+  async (s) => {
+    const user = await s.getUser(userId);
+    const posts = await s.getPosts(user.id);
+    return { user, posts };
+  }
+);
+```
 
 This is called "railway-oriented programming". Your data travels along the happy track, and errors switch to the error track.
 
@@ -284,72 +330,96 @@ graph LR
     linkStyle 3 stroke:#0f172a,stroke-width:3px
 ```
 
-### `createWorkflow()`: reusable flows with automatic error inference
+### `createWorkflow()`: reusable flows with production machinery
 
-When a flow becomes a reusable unit, name it with `createWorkflow()`. You get automatic error union inference from declared dependencies:
+When a flow becomes a reusable unit, name it with `createWorkflow()`. It is `run(deps, fn)` plus step caching, save & resume, and events. The same bound steps object is there as `steps`:
 
 ```typescript
-import { createWorkflow } from 'awaitly/workflow';
+import { createWorkflow } from 'awaitly';
 
 // Declare dependencies → error union computed automatically
 const loadUserData = createWorkflow({ getUser, getPosts, enrichUser });
 
-const result = await loadUserData(async (step) => {
-  const user = await step(() => getUser({ userId }, deps));
-  const posts = await step(() => getPosts({ userId: user.id }, deps));
-  const enriched = await step(() => enrichUser({ user, posts }, deps));
+const result = await loadUserData.run(async ({ steps }) => {
+  const user = await steps.getUser(userId);
+  const posts = await steps.getPosts(user.id);
+  const enriched = await steps.enrichUser(user, posts);
   return { user: enriched };
 });
 
 // result: Result<{ user: EnrichedUser }, 'NOT_FOUND' | 'DB_ERROR' | 'FETCH_ERROR' | 'ENRICHMENT_FAILED' | UnexpectedError>
 ```
 
+Workflows aren't callable: always go through `.run()`.
+
+### The explicit form: `step('id', () => fn())`
+
+When you need per-step options (retries, timeouts, cache keys) or the deps are dynamic, use `step`. It takes a string ID first and a thunk, so it controls when the call runs:
+
+```typescript
+import { run, type Errors } from 'awaitly';
+
+type AllErrors = Errors<[typeof getUser, typeof getPosts]>;
+
+const result = await run<{ user: User; posts: Post[] }, AllErrors>(async ({ step }) => {
+  const user = await step('getUser', () => getUser({ userId }, deps));
+  const posts = await step('getPosts', () => getPosts({ userId: user.id }, deps));
+  return { user, posts };
+});
+```
+
+`step` is also available alongside the bound steps: `run(deps, async (s, { step }) => ...)` and `workflow.run(async ({ steps, step }) => ...)`.
+
 **When to use which:**
 
-| Situation | Use |
+| Approach | Use when |
 | --- | --- |
-| One-off multi-step flow | `run()` |
-| Reusable workflow | `createWorkflow()` |
-| Need step caching or resume | `createWorkflow()` |
-| Want automatic error inference | `createWorkflow()` |
+| `run(deps, fn)` | Default. Errors inferred, steps auto-bound |
+| `createWorkflow(deps)` | Reusable or production flows: caching, resume, retries, events |
+| `run<T, Errors<[...]>>(fn)` with `step('id', ...)` | Dynamic deps, with the error union derived from your functions |
+
+Avoid bare `run(fn)` with no deps and no type parameters: the compiler has nothing to infer from, so `result.error` is typed as `UnexpectedError` alone.
 
 ---
 
 ## Handling Throwing Code
 
-What about code that throws? Like `JSON.parse` or third-party libraries?
+`JSON.parse` and many third-party libraries throw.
 
-You've built a clean system of Results, but you still interact with code that throws: built-in functions, npm packages, legacy code. You need a **bridge** between the messy world of exceptions and your clean Results.
+You've built a system of Results, but you still call code that throws: built-in functions, npm packages, legacy code. You need a **bridge** from exceptions into Results.
 
-That's what `step.try()` is for:
+`step.try()` is that bridge:
 
 ```typescript
-import { createWorkflow } from 'awaitly/workflow';
+import { createWorkflow } from 'awaitly';
 
-const workflow = createWorkflow({ getUser });
+// Errors introduced by step.try (not by a dep) are declared with `errors`
+const workflow = createWorkflow('loadUserConfig', { getUser }, {
+  errors: ['INVALID_CONFIG'],
+});
 
-const result = await workflow(async (step) => {
-  // Result-returning function: use step()
-  const user = await step(() => getUser({ userId }, deps));
+const result = await workflow.run(async ({ steps, step }) => {
+  // Result-returning function: use the bound step
+  const user = await steps.getUser(userId);
 
   // Throwing function: use step.try() with error mapping
-  const config = await step.try(
-    () => JSON.parse(user.configJson),
-    { error: 'INVALID_CONFIG' as const }
-  );
+  const config = await step.try('parseConfig', () => JSON.parse(user.configJson), {
+    error: 'INVALID_CONFIG',
+  });
 
   return { user, config };
 });
+// result.error: 'NOT_FOUND' | 'DB_ERROR' | 'INVALID_CONFIG' | UnexpectedError
 ```
 
-The key difference:
+The difference:
 
-- `step()` is for functions that already return `Result<T, E>` (your code)
+- `steps.x()` / `step()` are for functions that already return `Result<T, E>` (your code)
 - `step.try()` is for functions that throw (their code)
 
-`step.try()` catches exceptions, maps them to your error type, and converts them to Results. It's the entry point where messy throwing code enters your clean Result pipeline. The required `error` parameter makes you think about how to categorize the failure, though you'll want to be specific enough to preserve meaningful information.
+`step.try()` catches exceptions, maps them to your error type, and converts them to Results. Throwing code enters your Result pipeline through it. The required `error` parameter makes you decide how to categorize each failure; make the category specific enough to keep useful information.
 
-**Connection to TypeScript Config:** Note that `JSON.parse` returns `any` by default, which bypasses your type checking. With [@total-typescript/ts-reset](..//typescript-config), it returns `unknown` instead, forcing you to validate the result (typically with Zod). This pairs well with `step.try()`: the wrapper handles exceptions, and `ts-reset` + Zod handle type safety.
+**Connection to TypeScript Config:** `JSON.parse` returns `any` by default, which bypasses your type checking. With [@total-typescript/ts-reset](..//typescript-config), it returns `unknown` instead, forcing you to validate the result (typically with Zod). This pairs well with `step.try()`: the wrapper handles exceptions, and `ts-reset` + Zod handle type safety.
 
 **For Result-returning functions:** Use `step.fromResult()` to preserve typed errors:
 
@@ -357,16 +427,13 @@ The key difference:
 // callProvider returns Result<Response, ProviderError>
 const callProvider = async (input: string): AsyncResult<Response, ProviderError> => { ... };
 
-const response = await step.fromResult(
-  () => callProvider(input),
-  {
-    onError: (e) => ({
-      type: 'PROVIDER_FAILED' as const,
-      provider: e.provider,  // TypeScript knows e is ProviderError
-      code: e.code,
-    })
-  }
-);
+const response = await step.fromResult('callProvider', () => callProvider(input), {
+  onError: (e) => ({
+    type: 'PROVIDER_FAILED' as const,
+    provider: e.provider,  // TypeScript knows e is ProviderError
+    code: e.code,
+  }),
+});
 ```
 
 ### Outside Workflows: from, fromPromise, tryAsync
@@ -396,7 +463,7 @@ const data = await tryAsync(
 
 ## The Day-to-Day Toolkit
 
-You've got `run()` for composition and `step.try()` for bridging throws. Here are the remaining helpers teams reach for:
+You've got `run()` for composition and `step.try()` for bridging throws. The remaining helpers teams reach for:
 
 ### 1. `match()`: handle at boundaries
 
@@ -431,10 +498,10 @@ const domainResult = mapError(dbResult, (dbError) =>
 Run operations in parallel inside workflows:
 
 ```typescript
-import { allAsync } from 'awaitly';
+import { run, allAsync } from 'awaitly';
 
-const result = await run(async (step) => {
-  const [user, posts, settings] = await step(() => allAsync([
+const result = await run<{ user: User; posts: Post[]; settings: Settings }, AllErrors>(async ({ step }) => {
+  const [user, posts, settings] = await step('loadProfile', () => allAsync([
     getUser({ userId }, deps),
     getPosts({ userId }, deps),
     getSettings({ userId }, deps),
@@ -454,13 +521,13 @@ type UserError = ErrorOf<typeof getUser>;  // 'NOT_FOUND' | 'DB_ERROR'
 type AllErrors = Errors<[typeof getUser, typeof getPosts]>;
 ```
 
-**That's the toolkit.** awaitly also provides `andThen`, `map`, and other utilities, but default to `run()` for anything multi-step.
+awaitly also provides `andThen`, `map`, and other utilities, but default to `run()` for anything multi-step.
 
 ---
 
 ## Error Types That Make Sense
 
-Here are patterns for defining errors, from simplest to most powerful:
+Patterns for defining errors, from simplest to most powerful:
 
 > **Default: TaggedError.** Use it for most production code: you get stack traces, pattern matching, and context. Use string literals for small apps or quick prototypes where you don't need rich error information.
 
@@ -474,7 +541,7 @@ async function getUser(args, deps): Promise<Result<User, 'NOT_FOUND' | 'DB_ERROR
 }
 ```
 
-Simple, readable, works great for exhaustive switches.
+Readable, and they work well for exhaustive switches.
 
 ### Discriminated Unions (Rich)
 
@@ -485,7 +552,7 @@ type AppError =
   | { type: 'DB_ERROR'; query: string };
 ```
 
-When you need to carry extra information with the error.
+Use these when you need to carry extra information with the error.
 
 ### Const Objects (Runtime + Type)
 
@@ -542,6 +609,10 @@ error instanceof Error; // true
 - **Error chaining**: Pass `cause` to preserve the original error
 - **instanceof works**: Use familiar error handling patterns
 
+`UserNotFound` above has no message template, so `error.message` is `"UserNotFound"`. That works in a `match` and fails you in a trace: the [tracing wrapper](../opentelemetry) copies `error.message` into `exception.message`, so your backend shows a bare tag with no `userId` in sight. Give each error that can reach a span a message template that names the facts, and put what an operator needs to act on (`why`, `fix`, a docs `link`) on the props.
+
+Keep two constructions out of application code: a hand-written `_tag` on a plain object, and `switch (e._tag)` with a `default` that swallows the rest. The first forges the discriminant the type system relies on. The second is the "Type Wall" below in a different form. Use the constructor and `match`/`matchPartial`, and lint for both if you can.
+
 **Pattern matching** replaces verbose switch statements:
 
 ```typescript
@@ -562,7 +633,7 @@ const userMessage = TaggedError.matchPartial(
 );
 ```
 
-**In workflows**, TaggedErrors compose naturally:
+**In workflows**, TaggedErrors compose:
 
 ```typescript
 async function fetchUser(userId: string): AsyncResult<User, UserNotFound | DependencyFailed> {
@@ -572,21 +643,25 @@ async function fetchUser(userId: string): AsyncResult<User, UserNotFound | Depen
   return ok({ id: userId, name: "Test User" });
 }
 
-const result = await workflow(async (step) => {
-  const user = await step(() => fetchUser(args.userId));
+async function ensureFunds(balance: Balance, amount: number): AsyncResult<Balance, InsufficientFunds> {
+  return balance.available < amount
+    ? err(new InsufficientFunds({ required: amount, available: balance.available }))
+    : ok(balance);
+}
 
-  if (balance.available < args.amount) {
-    return err(new InsufficientFunds({
-      required: args.amount,
-      available: balance.available,
-    }));
-  }
+const transfer = createWorkflow({ fetchUser, getBalance, ensureFunds });
 
-  return ok({ user, balance });
+const result = await transfer.run(async ({ steps }) => {
+  const user = await steps.fetchUser(args.userId);
+  const balance = await steps.getBalance(user.id);
+  await steps.ensureFunds(balance, args.amount);
+
+  return { user, balance }; // return raw values; the workflow wraps them in ok()
 });
+// result.error: UserNotFound | DependencyFailed | InsufficientFunds | ... | UnexpectedError
 ```
 
-**API handlers** become clean with pattern matching:
+**API handlers** stay short with pattern matching:
 
 ```typescript
 if (!result.ok) {
@@ -613,12 +688,10 @@ When composing functions, error types accumulate automatically:
 
 const loadUserData = createWorkflow({ getUser, getPosts, enrichUser });
 
-const result = await loadUserData(async (step) => {
-  const user = await step(() => getUser({ userId }, deps));
-  const posts = await step(() => getPosts({ userId: user.id }, deps));
-  const enriched = await step(() => enrichUser({ user, posts }, deps));
-
-  return enriched;
+const result = await loadUserData.run(async ({ steps }) => {
+  const user = await steps.getUser(userId);
+  const posts = await steps.getPosts(user.id);
+  return await steps.enrichUser(user, posts);
 });
 
 // result: Result<EnrichedUser, 'NOT_FOUND' | 'DB_ERROR' | 'FETCH_ERROR' | 'ENRICHMENT_FAILED' | UnexpectedError>
@@ -677,7 +750,7 @@ function collapseToHttpError(error: DetailedError): HttpError {
 
 ---
 
-Transient failures need their own treatment: database connections dropping, HTTP timeouts, service hiccups. We'll cover retry and timeout patterns in [Resilience Patterns](..//resilience).
+Transient failures (database connections dropping, HTTP timeouts, service hiccups) need their own treatment. [Resilience Patterns](..//resilience) covers retry and timeout patterns.
 
 ---
 
@@ -687,7 +760,7 @@ Transient failures need their own treatment: database connections dropping, HTTP
 
 - **Invariant violation.** Programmer error, impossible state.
 - **Corrupted process state.** Can't recover meaningfully.
-- **Truly unrecoverable.** The only option is to crash.
+- **Unrecoverable.** The only option is to crash.
 
 ```typescript
 // Good: throw for impossible states
@@ -772,13 +845,13 @@ Exceptions bubble up from infrastructure, where your code catches and converts t
 
 ## Mapping Results to HTTP
 
-With TaggedError, use `TaggedError.match()` for clean, exhaustive handling:
+With TaggedError, use `TaggedError.match()` for exhaustive handling:
 
 ```typescript
 app.get('/users/:id', async (req, res) => {
-  const result = await getUserWithPosts(async (step) => {
-    const user = await step(() => getUser({ userId: req.params.id }, deps));
-    const posts = await step(() => getPosts({ userId: user.id }, deps));
+  const result = await getUserWithPosts.run(async ({ steps }) => {
+    const user = await steps.getUser(req.params.id);
+    const posts = await steps.getPosts(user.id);
     return { user, posts };
   });
 
@@ -796,6 +869,8 @@ app.get('/users/:id', async (req, res) => {
         error: 'Fetch failed',
         resource: e.resource
       }),
+      // run() and createWorkflow() add UnexpectedError for anything that threw
+      UnexpectedError: () => res.status(500).json({ error: 'Internal error' }),
     });
   }
 
@@ -824,7 +899,7 @@ app.get('/users/:id', async (req, res) => {
 });
 ```
 
-The key: **your domain errors stay clean, and the boundary layer owns the translation.**
+Your domain errors stay free of HTTP concerns, and the boundary layer owns the translation.
 
 ---
 
@@ -832,11 +907,10 @@ The key: **your domain errors stay clean, and the boundary layer owns the transl
 
 *Already got it? Skip to [The Rules](#the-rules).*
 
-Using TaggedError for the cleanest DX:
+Using TaggedError:
 
 ```typescript
-import { TaggedError, ok, err, type AsyncResult } from 'awaitly';
-import { createWorkflow } from 'awaitly/workflow';
+import { TaggedError, createWorkflow, ok, err, type AsyncResult } from 'awaitly';
 
 // Define errors with context
 class UserNotFound extends TaggedError('UserNotFound')<{ userId: string }> {}
@@ -871,14 +945,17 @@ async function getPosts(
   }
 }
 
-// Compose with createWorkflow
-const getUserWithPosts = createWorkflow({ getUser, getPosts });
+// Compose with createWorkflow, binding deps where the functions are passed in
+const getUserWithPosts = createWorkflow({
+  getUser: (userId: string) => getUser({ userId }, deps),
+  getPosts: (userId: string) => getPosts({ userId }, deps),
+});
 
 // Handler: clean error handling with pattern matching
 app.get('/users/:id', async (req, res) => {
-  const result = await getUserWithPosts(async (step) => {
-    const user = await step(() => getUser({ userId: req.params.id }, deps));
-    const posts = await step(() => getPosts({ userId: user.id }, deps));
+  const result = await getUserWithPosts.run(async ({ steps }) => {
+    const user = await steps.getUser(req.params.id);
+    const posts = await steps.getPosts(user.id);
     return { user, posts };
   });
 
@@ -887,6 +964,7 @@ app.get('/users/:id', async (req, res) => {
       UserNotFound: (e) => res.status(404).json({ error: 'User not found', userId: e.userId }),
       DbError: (e) => res.status(500).json({ error: 'Database error', operation: e.operation }),
       FetchError: (e) => res.status(500).json({ error: 'Fetch failed', resource: e.resource }),
+      UnexpectedError: () => res.status(500).json({ error: 'Internal error' }),
     });
   }
 
@@ -905,7 +983,7 @@ app.get('/users/:id', async (req, res) => {
 ## The Rules
 
 1. **Business functions return Results.** Make failure explicit in the type.
-2. **Use `run()` for multi-step operations.** Use `createWorkflow()` when the flow becomes reusable. Avoid `andThen` in application code.
+2. **Use `run(deps, fn)` for multi-step operations.** Use `createWorkflow()` when the flow becomes reusable or needs caching/resume. Give every explicit `step()` a string ID. Avoid `andThen` in application code.
 3. **Use TaggedError for rich errors.** Get stack traces, pattern matching, and context.
 4. **Use `step.try()` for throwing code.** Bridge exceptions into your Result pipeline.
 5. **Use `TaggedError.match()` at boundaries.** Exhaustive, clean error-to-response mapping.
@@ -915,9 +993,9 @@ app.get('/users/:id', async (req, res) => {
 
 ## What's Next
 
-You now have typed failure and composition ergonomics that make your code honest about what can go wrong.
+Your functions now declare their failures in their types, and you can compose them without manual checks.
 
-Next comes business workflows: retries, timeouts, parallelism, compensation, and rollback. What happens when step 2 of 5 fails, and how do you undo what already succeeded?
+Next come business workflows: retries, timeouts, parallelism, compensation, and rollback. If step 2 of 5 fails, how do you undo what already succeeded?
 
 ---
 

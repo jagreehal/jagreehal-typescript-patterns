@@ -1,0 +1,63 @@
+---
+// Page title plus a "copy page as Markdown" button, so a whole chapter can be
+// pasted into a coding agent as context. The raw Markdown is embedded once per
+// page; `</` is escaped so the JSON block cannot be closed early.
+const { entry } = Astro.locals.starlightRoute;
+const markdown = `# ${entry.data.title}\n\n${entry.body ?? ''}`;
+const payload = JSON.stringify(markdown).replaceAll('</', '<\\/');
+---
+
+<div class="page-title">
+  <h1 id="_top">{entry.data.title}</h1>
+  <button type="button" class="copy-page" data-copy-page aria-live="polite">Copy page as Markdown</button>
+</div>
+
+<script type="application/json" data-page-markdown set:html={payload} />
+
+<script>
+  const button = document.querySelector<HTMLButtonElement>('[data-copy-page]');
+  const source = document.querySelector('[data-page-markdown]');
+  if (button && source) {
+    const label = button.textContent;
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(JSON.parse(source.textContent ?? '""'));
+        button.textContent = 'Copied';
+      } catch {
+        button.textContent = 'Copy failed';
+      }
+      setTimeout(() => { button.textContent = label; }, 1500);
+    });
+  }
+</script>
+
+<style>
+  .page-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+    margin-top: 1rem;
+  }
+  h1 {
+    margin: 0;
+    font-size: var(--sl-text-h1);
+    line-height: var(--sl-line-height-headings);
+    font-weight: 600;
+    color: var(--sl-color-white);
+  }
+  .copy-page {
+    font-size: var(--sl-text-xs);
+    padding: 0.35rem 0.75rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    background: var(--sl-color-black);
+    color: var(--sl-color-gray-2);
+    cursor: pointer;
+  }
+  .copy-page:hover {
+    color: var(--sl-color-white);
+    border-color: var(--sl-color-gray-3);
+  }
+</style>

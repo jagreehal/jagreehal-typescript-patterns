@@ -9,13 +9,9 @@ description: Design prompts and specifications that use AI agent capabilities wh
 
 ## The Setup
 
-You paste your feature requirements into an AI coding agent. It generates 500 lines of code. Half doesn't compile. The other half uses patterns your team abandoned six months ago. You spend two hours fixing what should have taken twenty minutes.
+You paste your feature requirements into an AI coding agent. It generates 500 lines of code. Half doesn't compile. The other half uses patterns your team abandoned six months ago. You spend two hours fixing what should have taken twenty minutes, and the spec caused it.
 
-The spec is the problem.
-
-Most developers treat AI agents like magic boxes: dump in requirements, pray for good output. These tools have real constraints: finite context windows, no persistent memory between sessions, and a tendency to generate plausible-looking nonsense when given vague instructions.
-
-Better specs are the fix.
+Most developers treat AI agents like magic boxes: dump in requirements, pray for good output. These tools have real constraints: finite context windows, no persistent memory between sessions, and a tendency to generate plausible-looking nonsense when given vague instructions. A better spec works within those limits.
 
 ---
 
@@ -27,7 +23,7 @@ Two forces pull in opposite directions:
 
 **Context Limits.** AI agents have finite memory. Dump too much in, and the model loses focus. Key details drown in noise.
 
-The instinct is to write a massive spec covering every possible scenario. This fails predictably:
+You're tempted to write a massive spec covering every possible scenario. That fails in predictable ways:
 
 ```text
 // The Overload Approach
@@ -41,7 +37,7 @@ The instinct is to write a massive spec covering every possible scenario. This f
 Result: Agent overwhelmed, key details lost, generic output
 ```
 
-The solution: **structured, modular specs** that give the agent exactly what it needs for each task.
+Write **structured, modular specs** that give the agent what it needs for each task.
 
 ```mermaid
 graph LR
@@ -62,7 +58,7 @@ graph LR
 
 ## Plan Mode: Vision First, Details Second
 
-The most common mistake: diving straight into implementation details.
+The most common mistake is diving straight into implementation details.
 
 ```typescript
 // BAD: Implementation-first prompt
@@ -120,10 +116,10 @@ AI agents excel at elaboration when given clear direction. They struggle when fo
 
 By establishing vision first:
 
-- The AI understands the goal, not just the mechanics
+- The AI understands the goal as well as the mechanics
 - You catch misalignment before code is written
 - The plan becomes a reference for subsequent tasks
-- Iteration happens at the design level, not the implementation level
+- You iterate on the design before any implementation exists
 
 > **Practical tip:** Most AI coding tools have a "Plan Mode" or equivalent that restricts the agent to read-only operations. Use this for Phase 1. Let the agent explore your codebase and draft a plan before touching any files.
 
@@ -131,7 +127,7 @@ By establishing vision first:
 
 ## The Six Core Areas
 
-A good agent spec is a structured document covering specific areas. Effective specs converge on the same ones.
+A good agent spec is a structured document covering specific areas. The effective ones cover the same six.
 
 | Area | Purpose | Example |
 |------|---------|---------|
@@ -151,11 +147,11 @@ Don't write "run the tests." Write the exact command:
 
 - **Build**: `pnpm build` - Compiles TypeScript to dist/
 - **Test**: `pnpm test` - Runs vitest, must pass before commits
-- **Lint**: `pnpm lint --fix` - ESLint with auto-fix
+- **Lint**: `pnpm lint --fix` - Oxlint with auto-fix
 - **Type check**: `pnpm tsc --noEmit` - Verify types without emitting
 ```
 
-Agents need executable commands.
+An agent can execute a command. It can't execute a vague instruction.
 
 ### Testing: Framework and Patterns
 
@@ -223,17 +219,17 @@ async function createUser(
 
 ### Boundaries: The Critical Section
 
-This is where most specs fail. Covered in depth in the next section.
+Most specs fail here. The next section covers boundaries in depth.
 
 ---
 
 ## Three-Tier Boundaries
 
-The difference between a helpful AI agent and a chaotic one: **clear boundaries**.
+**Clear boundaries** separate a helpful AI agent from a chaotic one.
 
-Most specs either have no boundaries (agent does whatever it wants) or vague ones ("follow best practices"). Neither works.
+Most specs either have no boundaries (agent does whatever it wants) or vague ones ("follow best practices"), and neither works.
 
-The solution: **three-tier boundaries** that define autonomy levels.
+Use **three-tier boundaries** to define autonomy levels.
 
 ```mermaid
 graph TD
@@ -308,7 +304,7 @@ Hard stops. These should never happen regardless of context:
 - Force push to protected branches
 - Delete production data or migrations
 - Use `@ts-ignore` or `@ts-expect-error`
-- Suppress ESLint errors without explanation
+- Suppress lint errors without explanation
 - Use `any` type without explicit justification
 ```
 
@@ -320,7 +316,7 @@ Hard stops. These should never happen regardless of context:
 | Ask First | Medium | Medium | Approval only |
 | Never | N/A | High | Blocked |
 
-This structure gives the agent maximum autonomy on safe operations while preventing costly mistakes. The "Ask First" tier is key: it enables progress without requiring constant supervision.
+This structure gives the agent maximum autonomy on safe operations while preventing costly mistakes. The "Ask First" tier lets the agent make progress without constant supervision.
 
 ---
 
@@ -386,7 +382,7 @@ Each task gets a focused prompt with only relevant context.
 
 ### Context Budget Strategy
 
-Think of context like a budget. Allocate it deliberately:
+Treat context as a budget and allocate it on purpose:
 
 | Category | Allocation | Contents |
 |----------|------------|----------|
@@ -425,9 +421,9 @@ Long conversations accumulate context that may no longer be relevant. Signs you 
 - Switching to a different feature area
 - Agent starts confusing current task with earlier ones
 - Output quality degrades despite clear prompts
-- You've significantly changed direction from the original plan
+- You've changed direction from the original plan
 
-Don't be afraid to start new sessions. The spec file persists between sessions, so the agent can pick up context from there.
+Start new sessions freely. The spec file persists between sessions, so the agent can pick up context from there.
 
 ---
 
@@ -481,7 +477,23 @@ Before presenting any code as complete:
 
 If any check fails, fix the issue before presenting.
 Do not present code with known issues "for review."
+Do not suppress a rule or add a cast to make lint pass.
 ```
+
+### The Verdict Comes From the Run
+
+An agent that grades its own homework converges on whatever it finds easy to claim. Delete the tests and "tests pass" is true. You fix this with a verdict the agent does not control, and no prompt gives you that.
+
+- **The verdict is an exit code.** The loop ends when the suite is green. Read the run artifacts and ignore the agent's account of them.
+- **Ratchet against subtraction.** Compare each run to a baseline. A test the agent removed or skipped fails the loop even when everything left is green. Without the baseline the loop cannot fail, so a green run tells you nothing.
+- **Scope the goal.** "Make `refund.test.ts` pass without changing any other test file" is a goal. "Make tests pass" is an invitation.
+- **One failure per sub-agent.** Hand a sub-agent six failures and it will fix the easy one and rationalise the rest.
+- **Cap the iterations.** At the cap, the agent reports the goal as unmet and stops.
+- **Mark what the run didn't verify.** The agent labels anything it wrote from reading a diff rather than from a test run. You will spend more time undoing a confident explanation of an unverified claim than you would have spent verifying it.
+
+**Agents verify goals; CI needs journeys.** An agent driving a browser through Playwright MCP is a good way to explore a feature or reproduce a report, and it stays out of the PR gate. The exploration ends in a committed, deterministic spec that you review like any other; [Browser Journeys](../browser-journeys#agents-verify-goals-ci-needs-journeys) has the checklist.
+
+Ask for evidence proportionate to the change. A bug fix comes with a test that failed before the fix; that failing-first run is the cheapest credible signal you can get. A refactor comes with no new assertions, and you should be suspicious of one that does. A performance claim comes with a measurement. When an agent reports coverage, ask for the [mutation score](../test-quality#coverage-is-an-attendance-register) on the changed files instead; an agent can reach 100% coverage with tests that assert nothing, and a survivor on a line it wrote is a test it still owes you.
 
 ### Human Oversight Remains Essential
 
@@ -498,7 +510,7 @@ Self-verification catches mechanical errors. It doesn't catch:
 
 ## Spec-Driven Development Phases
 
-Working with AI agents is a skill that develops over time. Here's a typical progression:
+Working with AI agents is a skill you build over time. A typical progression:
 
 | Phase | Focus | Human Role | Agent Role |
 |-------|-------|------------|------------|
@@ -509,7 +521,7 @@ Working with AI agents is a skill that develops over time. Here's a typical prog
 
 ### Phase 1: Foundation
 
-Create your initial spec. This takes time upfront but pays dividends:
+Create your initial spec. Expect to spend time upfront:
 
 - Define your code patterns with examples
 - Establish boundaries (Always/Ask/Never)
@@ -534,7 +546,7 @@ With a mature spec, routine tasks become predictable:
 
 ### Phase 4: Evolution
 
-Specs aren't static. Update when:
+Update the spec when:
 
 - Team adopts new patterns
 - Dependencies change
@@ -547,14 +559,14 @@ Treat your spec like code: version control it, review changes, keep it current.
 
 ## Practical Example: Complete Spec Template
 
-Here's a complete, copy-paste-ready spec file integrating all patterns from this documentation series.
+This complete, copy-paste-ready spec file integrates all patterns from this documentation series.
 
 ```markdown
 # Project: [Your Project Name]
 
 ## Tech Stack
 
-- TypeScript 5.x with strict mode
+- TypeScript 7 with strict mode
 - Node.js 24+
 - Vitest for testing
 - Zod for validation
@@ -705,11 +717,11 @@ Before presenting code as complete:
 
 3. **Define boundaries explicitly.** Always/Ask First/Never tiers prevent autonomous chaos while enabling efficient execution on safe operations.
 
-4. **Build verification into the spec.** Self-checks (lint, test, types) catch mechanical errors before human review. But mechanical checks don't replace human oversight.
+4. **Build verification into the spec.** Self-checks (lint, test, types) catch mechanical errors before human review. You still need human oversight.
 
 5. **Context is finite; spend it wisely.** 40% current task, 30% relevant patterns, 20% boundaries, 10% history. Cut what doesn't serve the immediate goal.
 
-6. **Evolve the spec continuously.** Treat it like code: version control, review changes, update when patterns change. A stale spec produces stale output.
+6. **Evolve the spec continuously.** Treat it like code: version control, review changes, update when patterns change. If the patterns change and the spec doesn't, the agent keeps writing the old ones.
 
 ---
 
@@ -737,7 +749,7 @@ The patterns in this guide mirror the patterns throughout this documentation ser
 - **Zod validation** creates clear boundaries the AI can respect
 - **Explicit testing patterns** enable self-verification
 
-A good spec teaches the AI how your team builds software, not only what to build.
+A good spec teaches the AI how your team builds software as well as what to build.
 
 ---
 

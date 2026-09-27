@@ -5,6 +5,8 @@ description: Give unit, integration, component, and executable story tests one j
 
 _Previously: [Testing & Testability](../testing/). That pattern makes dependencies explicit. This pattern decides which test should exercise each dependency._
 
+*Use this page when you are deciding where a new test belongs, or a suite has two levels proving the same thing.*
+
 Teams lose time when test levels overlap. A browser test checks a loading state that a component test covers. An integration test repeats a parsing rule from a unit test. Three test files keep separate copies of the same API response.
 
 Assign each behaviour to the shallowest level that can prove it.
@@ -230,20 +232,12 @@ e2e/
 
 Some repositories centralise unit and integration tests under `tests/unit/` and `tests/integration/`. That layout works when the team applies it with consistency. File suffixes and CI commands should still expose each test's owner.
 
-## Review New Tests
-
-Ask these questions during review:
-
-- Does one lower level prove the same behaviour?
-- Does the test cross the seam its level owns?
-- Does a shared fixture already cover this payload?
-- Would a refactor that preserves user behaviour break the test?
-
-Move the test down when a lower level can answer the same question with less setup.
-
 ## Related Patterns
 
 - [Testing & Testability](../testing/) covers explicit dependency injection and local test doubles.
 - [Testing External Infrastructure](../testing-external-services/) covers real test infrastructure, provider sandboxes, MSW, and HTTP mocks.
+- [Browser Journeys](../browser-journeys/) covers the Playwright specifics for level 4: locators, premature-pass races, error observability, isolation.
+- [Test Quality](../test-quality/) covers reviewing a new test and proving the suite would notice a fault.
+- [CI Gates and Triage](../ci-gates/) covers what blocks a merge and how to sort a red run.
 
 _Next: [Testing External Infrastructure](../testing-external-services/). Choose real instances, sandboxes, or controlled responses for each external boundary._

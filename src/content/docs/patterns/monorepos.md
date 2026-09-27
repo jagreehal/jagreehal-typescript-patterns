@@ -3,7 +3,7 @@ title: Monorepo Patterns
 description: Structure TypeScript monorepos for debuggability, shared configuration, and granular package exports without premature abstraction.
 ---
 
-*Previously: [Enforcing Patterns with ESLint](..//eslint). ESLint enforces patterns within a package. But how do you enforce them across multiple packages?*
+*Previously: [Enforcing Patterns with Oxlint](..//lint). Oxlint enforces patterns within a package. But how do you enforce them across multiple packages?*
 
 ---
 
@@ -17,7 +17,7 @@ You check the import: it points to `dist/index.js`. You wanted to debug the Type
 
 Or worse: your SDK has a bug, you fix it, but you forgot to rebuild. The app still reads stale output. You spend an hour debugging code that doesn't match what you're reading.
 
-Monorepos promise shared code and fast iteration. But most setups fail in two predictable ways:
+Most setups fail in two predictable ways:
 
 - **You can't debug source**: you step into compiled or minified output
 - **You can't trust iteration**: the app runs stale build artifacts you forgot to rebuild
@@ -34,11 +34,11 @@ monorepo/
 │   └── web/                  # Next.js, Vite, etc.
 ├── packages/
 │   ├── sdk/                  # Core business logic
-│   ├── config/        # (optional) Shared ESLint, TS configs etc
+│   ├── config/        # (optional) Shared lint, TS configs etc
 ├── turbo.json
 ├── pnpm-workspace.yaml
 ├── tsconfig.json             # Base config
-└── eslint.config.js          # Base rules
+└── oxlint.config.ts          # Base rules
 ```
 
 ### Anti-Patterns to Avoid
@@ -58,9 +58,9 @@ monorepo/
 For internal monorepo development, we prefer importing source directly for the fastest iteration. If you publish packages externally, sourcemaps are the non-negotiable fallback (see "When TS Paths Aren't Enough" below).
 
 > **Assumption**: This assumes your app consumes the SDK via workspace linking (pnpm/yarn/npm workspaces), not via an installed npm tarball.
-> TS paths won't help consumers debug your published output. That's what sourcemaps are for.
+> TS paths won't help consumers debug your published output. Sourcemaps cover that case.
 
-The fix: point TypeScript paths at source files, not compiled output.
+Point TypeScript paths at source files instead of compiled output.
 
 ```mermaid
 graph LR
@@ -95,7 +95,7 @@ In your consuming app's `tsconfig.json`:
 }
 ```
 
-> **TypeScript 7:** `baseUrl` is gone. Path values resolve relative to the config file that defines them — so keep explicit prefixes like `./src/*` and `../../packages/...`, not bare `src/*` that once depended on `baseUrl`.
+> **TypeScript 7:** `baseUrl` is gone. Path values resolve relative to the config file that defines them, so keep explicit prefixes like `./src/*` and `../../packages/...`, not bare `src/*` that once depended on `baseUrl`.
 
 Now when you import from `@myorg/sdk/queries`, TypeScript resolves it to the source file. Your debugger steps through TypeScript. Hot reload catches changes.
 
@@ -163,7 +163,7 @@ For CI/production builds, create a separate tsconfig that removes workspace path
 
 ### VS Code Debugging
 
-If you use VS Code, here's a working launch config. The principle applies to any editor: run the package with a package-scoped `cwd`, and ensure sourcemaps resolve to workspace files.
+If you use VS Code, this launch config works. The principle applies to any editor: run the package with a package-scoped `cwd`, and ensure sourcemaps resolve to workspace files.
 
 ```json
 // .vscode/launch.json
@@ -207,28 +207,28 @@ Now F5 launches the app and breakpoints in SDK source files work.
 
 If TypeScript is resolving into raw source files across packages, won't builds crawl?
 
-Usually no — and TypeScript 7 makes this even less of a concern. The native compiler is roughly an order of magnitude faster, and `tsc --build` can parallelize project-reference builds with `--builders`. Incremental compilation (`tsBuildInfoFile`) still helps. The bottleneck in most monorepos remains I/O and dependency resolution, not type-checking source files.
+Usually not, and TypeScript 7 shrinks the concern further. The native compiler is roughly an order of magnitude faster, and `tsc --build` can parallelize project-reference builds with `--builders`. Incremental compilation (`tsBuildInfoFile`) still helps. The bottleneck in most monorepos remains I/O and dependency resolution, not type-checking source files.
 
 If you *do* hit slowdowns with 10+ packages, consider:
 
 - **Project references**: Let each package emit `.d.ts` files and reference those instead of raw source; tune `--builders` for parallel builds
 - **Turborepo caching**: Avoid re-checking unchanged packages entirely
 
-But start with the simple approach. Optimize when profiling shows a real problem.
+Start with the simple approach and optimize when profiling shows a real problem.
 
 ---
 
 ## Shared Config: Extend and Override
 
-Every package needs TypeScript and ESLint config. Don't copy-paste. Create base configs at the root that packages extend. For Prettier, keep a single root config and use `eslint-config-prettier` to avoid rule conflicts.
+Every package needs TypeScript and lint config. Don't copy-paste. Create base configs at the root that packages extend. Oxlint ships no formatting rules, so there is no conflict with Prettier (or oxfmt) to manage.
 
 ```mermaid
 graph TD
     A["Root tsconfig.json<br/>strictNullChecks, moduleResolution"] --> B["packages/sdk/tsconfig.json<br/>extends root<br/>adds: outDir, rootDir"]
     A --> C["apps/web/tsconfig.json<br/>extends root<br/>adds: paths, jsx"]
 
-    D["Root eslint.config.js<br/>Base rules"] --> E["packages/sdk/eslint.config.js<br/>imports root<br/>adds: neverthrow plugin"]
-    D --> F["apps/web/eslint.config.js<br/>imports root<br/>adds: react-hooks"]
+    D["Root oxlint.config.ts<br/>Base rules"] --> E["packages/sdk/oxlint.config.ts<br/>extends root<br/>adds: no-export-all"]
+    D --> F["apps/web/oxlint.config.ts<br/>extends root<br/>adds: react, jsx-a11y"]
 
     style A fill:#475569,stroke:#0f172a,stroke-width:2px,color:#fff
     style D fill:#475569,stroke:#0f172a,stroke-width:2px,color:#fff
@@ -262,7 +262,7 @@ graph TD
 
 The root config sets `noEmit: true` for type-checking only, not building. Each package overrides this when it needs to emit.
 
-> **Node packages:** For code that runs directly in Node (APIs, CLIs, workers), use `module` / `moduleResolution: "nodenext"` instead of `ESNext` / `bundler`. Keep `bundler` for apps and packages that go through Vite, Next.js, or similar.
+> **Node packages:** For code that runs directly in Node (APIs, CLIs, workers), use `module` / `moduleResolution: "nodenext"` instead of `ESNext` / `bundler`. Keep `bundler` for apps and packages that go through Vite, Next.js, or similar. TypeScript 7 rejects `moduleResolution: "node"`, so a package still on it must move to one of these two.
 ```json
 // packages/sdk/tsconfig.json
 {
@@ -279,50 +279,59 @@ The root config sets `noEmit: true` for type-checking only, not building. Each p
 
 The SDK inherits all base settings, enables emitting, and adds build-specific options.
 
-### ESLint v9: Import and Spread
+### Oxlint: Extend and Override
 
-ESLint v9 flat config makes extension explicit. Define base rules at the root:
+Oxlint finds the nearest `oxlint.config.ts` (or `.oxlintrc.json`) for each file, so a package config applies to that package and `extends` pulls in the root. Define base rules at the root:
 
-```javascript
-// Root eslint.config.js
-import tsPlugin from '@typescript-eslint/eslint-plugin';
-import unicornPlugin from 'eslint-plugin-unicorn';
+```ts
+// Root oxlint.config.ts
+import { defineConfig } from 'oxlint';
 
-export default [
-  { ignores: ['**/dist/**'] },
-  {
-    files: ['**/*.ts', '**/*.tsx'],
-    plugins: { '@typescript-eslint': tsPlugin, unicorn: unicornPlugin },
-    rules: {
-      ...unicornPlugin.configs.recommended.rules,
-      ...tsPlugin.configs.recommended.rules,
-    },
-  },
-];
+export default defineConfig({
+  ignorePatterns: ['**/dist/**'],
+  plugins: ['typescript', 'unicorn', 'import'],
+  categories: { correctness: 'error', suspicious: 'error' },
+});
 ```
 
-Packages import and spread, then add their own rules:
+Packages extend the root, then add their own rules. Oxlint has no `no-restricted-syntax`, so banning `export *` takes a ten-line rule of your own, which is also the smallest useful example of writing one:
 
-```javascript
-// packages/sdk/eslint.config.js
-import baseConfig from '../../eslint.config.js';
+```ts
+// tools/oxlint/no-export-all.ts
+import { definePlugin } from '@oxlint/plugins';
 
-export default [
-  ...baseConfig,
-  {
-    files: ['src/**/*.ts'],
-    rules: {
-      // Package-specific: ban barrel exports
-      'no-restricted-syntax': ['error', {
-        selector: 'ExportAllDeclaration',
-        message: 'Barrel exports (export * from) are not allowed.',
-      }],
+export default definePlugin({
+  meta: { name: 'local' },
+  rules: {
+    'no-export-all': {
+      create(context) {
+        return {
+          ExportAllDeclaration(node) {
+            context.report({ node, message: 'Barrel exports (export * from) are not allowed.' });
+          },
+        };
+      },
     },
   },
-];
+});
 ```
 
-The pattern: **import → spread → extend**. See [Enforcing Patterns with ESLint](..//eslint) for complete configs.
+```ts
+// packages/sdk/oxlint.config.ts
+import baseConfig from '../../oxlint.config.ts';
+import { defineConfig } from 'oxlint';
+
+export default defineConfig({
+  extends: [baseConfig],
+  jsPlugins: [{ name: 'local', specifier: '../../tools/oxlint/no-export-all.ts' }],
+  rules: {
+    // Package-specific: ban barrel exports
+    'local/no-export-all': 'error',
+  },
+});
+```
+
+The pattern: **extend → add**. See [Enforcing Patterns with Oxlint](..//lint) for complete configs.
 
 ---
 
@@ -336,9 +345,9 @@ Premature shared packages create coordination overhead: versioning, ownership am
 
 ## Granular Exports: Avoid Barrel Files
 
-This pattern seems helpful but causes pain at scale.
+Barrel files look helpful and cause pain at scale.
 
-> This matters whether you publish to npm or consume via workspace links. For internal packages, it's about API discipline and bundle hygiene. For published packages, it's also about stable import paths.
+> The advice holds whether you publish to npm or consume via workspace links. For internal packages, it's about API discipline and bundle hygiene. For published packages, it's also about stable import paths.
 
 A **barrel file** is an `index.ts` that re-exports everything from other modules using `export * from`. It looks convenient:
 
@@ -359,7 +368,7 @@ The web app imports one function: `import { formatOrder } from '@myorg/sdk'`. In
 - **Circular dependencies**: Barrels make it easy to create import cycles that cause runtime errors or undefined values
 - **Refactoring friction**: Moving code means updating the barrel, which breaks every consumer's imports
 
-A tiny import can balloon into a much larger bundle, but worse, your codebase becomes hard to refactor and debug.
+A tiny import can balloon into a much larger bundle. Worse, your codebase gets hard to refactor and debug.
 
 ### Explicit Entry Points with tsup
 
@@ -416,9 +425,9 @@ Map each entry point in package.json:
 }
 ```
 
-Notice there's no root `"."` export. This is intentional: consumers *must* import from `@myorg/sdk/logger`, not `@myorg/sdk`. If you prefer discoverability, you can add a `"."` export as a type-only or thin entry point, but avoid `export * from` barrels.
+Notice there's no root `"."` export. The omission is deliberate: consumers *must* import from `@myorg/sdk/logger`, not `@myorg/sdk`. If you prefer discoverability, you can add a `"."` export as a type-only or thin entry point, but avoid `export * from` barrels.
 
-The `sideEffects: false` tells bundlers they can tree-shake unused exports. Only set this if your modules are side-effect free on import (no top-level code that runs just by importing).
+The `sideEffects: false` tells bundlers they can tree-shake unused exports. Only set this if your modules are side-effect free on import (no top-level code that runs on import).
 
 ### Consumer Usage
 
@@ -437,7 +446,7 @@ import { createLogger } from '@myorg/sdk/logger';
 
 ### When Barrel Files Are Fine
 
-I'm not saying "never use index.ts". Barrel files work when:
+Barrel files still work when:
 
 - **Small, cohesive modules**: A `utils/` folder with 3-4 pure functions that always travel together
 - **Type-only exports**: Re-exporting types has no runtime cost
@@ -445,7 +454,7 @@ I'm not saying "never use index.ts". Barrel files work when:
 
 Barrel files become problematic when they sit at package boundaries and re-export *everything*. A single `index.ts` that exports 40 functions from 15 modules is the anti-pattern. A focused re-export of related utilities is fine.
 
-> **Enforcement**: The ESLint config shown earlier bans `export *` with `no-restricted-syntax`. See [Enforcing Patterns with ESLint](..//eslint) for variations.
+> **Enforcement**: The Oxlint config shown earlier bans `export *` with a local `no-export-all` rule. See [Enforcing Patterns with Oxlint](..//lint) for the rest of the rules.
 
 ---
 
@@ -485,7 +494,7 @@ packages:
 }
 ```
 
-`dependsOn: ["^build"]` means "build my dependencies first." When you run `turbo build` in the web app, Turborepo builds the SDK first. No manual coordination.
+`dependsOn: ["^build"]` means "build my dependencies first." When you run `turbo build` in the web app, Turborepo builds the SDK first, with no manual coordination.
 
 > **Note**: Each package must define matching scripts (`build`, `lint`, `test`) in its `package.json` for Turborepo to orchestrate them. Each package's build script defines its own outputs; Turborepo caches per-package. The `outputs` array lists all possible outputs across packages: `dist/**` for SDK packages, `.next/**` for Next.js apps, etc.
 
@@ -495,11 +504,11 @@ packages:
 
 1. **Use TS paths for source debugging.** Point consuming apps to `src/`, not `dist/`. Avoid TS paths inside packages; prefer relative imports (`../logger`) within a package.
 
-2. **Extend, don't copy.** Root configs for tsconfig, ESLint, Prettier. Packages extend and add specifics.
+2. **Extend, don't copy.** Root configs for tsconfig, Oxlint, Prettier. Packages extend and add specifics.
 
 3. **Duplicate first, extract later.** Wait for three uses and a stable interface before creating shared packages.
 
-4. **Explicit exports only.** Use tsup entry points. Ban `export *` with ESLint to keep bundles lean.
+4. **Explicit exports only.** Use tsup entry points. Ban `export *` with a lint rule to keep bundles lean.
 
 5. **Orchestrate with Turborepo.** Let dependency ordering happen automatically with `dependsOn: ["^build"]`.
 
@@ -512,7 +521,7 @@ packages:
 | Source debugging | TS paths in tsconfig | Step through SDK source, not compiled JS |
 | Shared config | extends/imports | Consistent settings, package-specific overrides |
 | Granular exports | tsup entry points | Tree-shaking, explicit dependencies |
-| No barrel exports | ESLint no-restricted-syntax | Prevent `export *` from bloating bundles |
+| No barrel exports | Oxlint custom rule | Prevent `export *` from bloating bundles |
 | Build orchestration | Turborepo | Automatic dependency ordering |
 | Workspace management | pnpm workspaces | Linked packages, fast installs |
 
