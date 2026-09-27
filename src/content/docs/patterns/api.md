@@ -3,7 +3,7 @@ title: API Design Patterns
 description: Build production-ready HTTP APIs with clean handlers, consistent error mapping, health checks, and graceful shutdown.
 ---
 
-*Previously: [Configuration at the Boundary](..//configuration). We learned to validate config at startup. Now let's build APIs that use all these patterns together.*
+*Previously: [Configuration at the Boundary](..//configuration). We learned to validate config at startup. Next, you build APIs that use all these patterns together.*
 
 ---
 
@@ -329,7 +329,7 @@ function handleUnknownError(error: unknown, requestId: string, logger: Logger) {
 }
 ```
 
-> **Important**: Install a global error handler (middleware) that converts framework validation errors (Zod) and unknown exceptions into your `ErrorResponse` envelope. Otherwise, validation failures will return the framework's default format.
+> Install a global error handler (middleware) that converts framework validation errors (Zod) and unknown exceptions into your `ErrorResponse` envelope. Otherwise, validation failures will return the framework's default format.
 
 ### HTTP Status Code Guidelines
 
@@ -563,7 +563,7 @@ process.on("unhandledRejection", (reason) => {
 });
 ```
 
-> **Bounded tracking**: The `activeRequests` Set only holds references to pending promises. Once they settle, `finally()` removes them. For very high-throughput services, consider capping tracked requests or using a counter instead of storing promise references.
+> **Bounded tracking**: The `activeRequests` Set only holds references to pending promises. Once they settle, `finally()` removes them. For high-throughput services, consider capping tracked requests or using a counter instead of storing promise references.
 
 ### In Handlers: Reject During Shutdown
 
@@ -784,9 +784,9 @@ const corsConfig = {
 };
 ```
 
-> **Critical**: Browsers reject `credentials: true` with `Access-Control-Allow-Origin: *`. Always echo the specific allowed origin and include `Vary: Origin` so caches don't mix up responses.
+> Browsers reject `credentials: true` with `Access-Control-Allow-Origin: *`. Always echo the specific allowed origin and include `Vary: Origin` so caches don't mix up responses.
 
-> **Non-browser requests**: When `Origin` is absent (curl, server-to-server), CORS doesn't apply. It's a browser-only policy. You don't need to set any CORS headers for these requests; just process them normally.
+> **Non-browser requests**: When `Origin` is absent (curl, server-to-server), CORS doesn't apply, because CORS is a browser-only policy. You don't need to set any CORS headers for these requests; process them normally.
 
 ### Common CORS Mistakes
 
@@ -917,6 +917,8 @@ curl -X POST https://api.example.com/orders \
 - **Database unique constraint**: Use idempotency key as part of unique index
 - **Distributed cache**: Redis with TTL for stateless services
 - **Client-side**: Generate UUID before first request attempt
+
+**Pick a key that survives retries.** The key must be the same on every attempt at the *same* operation. A fresh UUID per attempt defeats the point. So does a commit SHA for a CI bot that posts once per PR, because the SHA changes on every push. Key on whatever is stable across attempts: the client's operation id, or the transfer id from [Point-in-Time Capture](../point-in-time-capture).
 
 > **Don't retry non-idempotent writes without idempotency keys.** This is a common cause of production incidents.
 
@@ -1379,7 +1381,7 @@ describe("getPost", () => {
 
 ## Testing API Handlers
 
-With the `fn(args, deps)` pattern, testing becomes straightforward. Explicit dependencies mean you can inject mocks without `vi.mock` magic.
+The `fn(args, deps)` pattern keeps testing straightforward. With explicit dependencies, you inject mocks without `vi.mock` magic.
 
 ### Critical Rules
 
@@ -1548,7 +1550,7 @@ if (
 
 ## The Complete Handler Pattern
 
-Putting it all together. Every pattern in one example:
+This example puts every pattern together:
 
 ```typescript
 import { os, ORPCError } from "@orpc/server";
@@ -1729,7 +1731,7 @@ export const createOrder = os
 
 ## What We've Built
 
-Over these patterns, we've constructed a complete TypeScript application architecture:
+Across these patterns, you've built a complete TypeScript application architecture:
 
 1. **[Testing drives design](..//testing)**: Testability revealed the need for explicit deps
 2. **[Functions over classes](..//functions)**: `fn(args, deps)` pattern
@@ -1740,7 +1742,7 @@ Over these patterns, we've constructed a complete TypeScript application archite
 7. **[Configuration](..//configuration)**: Validate at startup, secrets in memory
 8. **[API design](..//api)**: This pattern: handlers, health checks, security
 
-Each pattern builds on the previous to form a cohesive architecture.
+Each pattern builds on the one before it.
 
 ---
 
@@ -1771,7 +1773,7 @@ Each pattern builds on the previous to form a cohesive architecture.
 
 ## What's Next
 
-We've built the complete application architecture. Patterns only help when they're enforced. How do you ensure these patterns are followed, especially with AI-generated code?
+You now have the complete application architecture. Patterns only help when you enforce them, especially when AI generates some of your code.
 
 ---
 

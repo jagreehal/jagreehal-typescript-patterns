@@ -7,7 +7,7 @@ description: Add observability to your functions without cluttering business log
 
 ---
 
-Your functions are clean. They have explicit deps, validated args, and honest error types. The code is a joy to read.
+Your functions have explicit deps, validated args, and honest error types.
 
 Then you deploy to production.
 
@@ -43,13 +43,13 @@ async function getUser(args: { userId: string }, deps: GetUserDeps) {
 }
 ```
 
-Now you have visibility. But look what happened to your function.
+You have visibility now, and your function paid for it.
 
-Half of it is logging. The business logic (find user, return it) is buried under observability concerns. And you have to do this for every function.
+Half of it is logging. The business logic (find user, return it) is buried under observability concerns. You repeat this in every function.
 
 ### The String Interpolation Problem
 
-There's another issue. Look at the logging again:
+The logging has a second problem:
 
 ```typescript
 deps.logger.info(`getUser called with userId=${args.userId}`);
@@ -82,7 +82,7 @@ Now you can filter logs by `userId`, count actions, and build dashboards.
 
 Structured logging creates a new risk: accidentally logging secrets.
 
-**The problem:** You log a user object for debugging, and suddenly your log aggregator contains passwords:
+**The problem:** You log a user object for debugging, and your log aggregator ends up holding passwords:
 
 ```typescript
 // Innocent-looking code
@@ -188,11 +188,11 @@ SOC2 and GDPR compliance often require filtering at both layers.
 
 ### From Logging to Tracing
 
-But even structured logging has limits. Logs are isolated events. When a request flows through multiple services, you can't connect the logs. You end up grepping timestamps and hoping.
+Structured logging still has limits: logs are isolated events. When a request flows through multiple services, you can't connect the logs. You end up grepping timestamps and hoping.
 
-**Distributed tracing** solves this. Instead of isolated logs, you get spans that connect into traces. A single request becomes a tree of operations you can visualize and query.
+**Distributed tracing** replaces isolated logs with spans that connect into traces. A single request becomes a tree of operations you can visualize and query.
 
-The problem? Setting up OpenTelemetry manually is painful:
+Setting up OpenTelemetry by hand is painful:
 
 ```typescript
 // The nightmare: manual OpenTelemetry setup
@@ -214,7 +214,7 @@ sdk.start();
 // ... and you still need to manually create spans in your code
 ```
 
-Tons of boilerplate before you've traced a single function. And auto-instrumentation only traces HTTP/database calls, not your business logic.
+That is a lot of boilerplate before you've traced a single function, and auto-instrumentation only traces HTTP/database calls, not your business logic.
 
 You want tracing without the setup pain.
 
@@ -246,7 +246,7 @@ const getUser = trace(
 );
 ```
 
-The function signature is unchanged: `(args, deps) => Promise<Result<User, E>>`. But now every call creates a span in your distributed tracing system.
+The function signature is unchanged: `(args, deps) => Promise<Result<User, E>>`. Every call now creates a span in your distributed tracing system.
 
 You set attributes on the span, mark success or failure, and the wrapper handles the rest: timing, error recording, span lifecycle.
 
@@ -270,7 +270,7 @@ graph TD
 
 ## Why This Shape Works
 
-Notice the pattern:
+The pattern:
 
 ```typescript
 const myFunction = trace(
@@ -319,7 +319,7 @@ function trace<Args, Deps, R>(
 }
 ```
 
-That's the conceptual model: wrap a function, create a span, provide context, and clean up. The real library adds more (naming, nested spans, batching), but the pattern is the same.
+The conceptual model: wrap a function, create a span, provide context, and clean up. The real library adds more (naming, nested spans, batching), but the pattern is the same.
 
 ---
 
@@ -345,7 +345,9 @@ describe('getUser', () => {
 });
 ```
 
-No mocking the tracer. No special setup. When tracing is disabled (no OpenTelemetry endpoint), `trace()` is a no-op wrapper. Your tests run against the same function signature as before.
+You don't mock the tracer or add special setup. When tracing is disabled (no OpenTelemetry endpoint), `trace()` is a no-op wrapper. Your tests run against the same function signature as before.
+
+The same holds for `ctx`: with no active span it no-ops rather than throws, so instrumentation cannot be the thing that fails a request. If a test does need to assert on what you recorded (the `gen_ai` attributes in [Point-in-Time Capture](../point-in-time-capture), say), autotel ships `createMemoryExporter()` from `autotel/testing`, which returns spans as plain objects you can `find` on. Use it when the attribute is the behaviour under test.
 
 ---
 
@@ -378,7 +380,7 @@ createOrder (span)
 └── processPayment (child span)
 ```
 
-No manual context propagation. The wrapper handles it.
+The wrapper propagates context, so you don't have to.
 
 ---
 
@@ -448,6 +450,7 @@ This separation keeps your core logic pure and testable at scale.
 
 ```typescript
 import { init, trace, track, type TraceContext } from 'autotel';
+import { run } from 'awaitly';
 
 // Initialize once at startup
 init({
@@ -481,14 +484,17 @@ const createOrder = trace(
     ctx.setAttribute('order.userId', userId);
     ctx.setAttribute('order.itemCount', items.length);
 
-    return run(async (step) => {
-      // Each step is traced as part of this span
-      const total = await step(() => calculateTotal({ items }, { db }));
-      const payment = await step(() => processPayment({ userId, amount: total }, { db, logger }));
+    return run(async ({ step }) => {
+      // awaitly emits a child span per step, nested under this one
+      const total = await step('calculateTotal', () => calculateTotal({ items }, { db }));
+      const payment = await step('processPayment', () =>
+        processPayment({ userId, amount: total }, { db, logger })
+      );
 
       const order = await step.try(
+        'saveOrder',
         () => db.saveOrder({ userId, items, total, paymentId: payment.id }),
-        { mapError: () => 'DB_ERROR' as const }
+        { error: 'DB_ERROR' as const }
       );
 
       // Track business event
@@ -511,7 +517,7 @@ Every `createOrder` call generates a span with:
 - Attributes: userId, itemCount
 - Timing: how long it took
 - Status: success or failure
-- Nested spans: calculateTotal, processPayment, etc.
+- Nested spans: calculateTotal, processPayment, saveOrder. awaitly emits run and step spans through the global OpenTelemetry API, so they nest under the autotel span with no extra wiring (`AWAITLY_TELEMETRY=0` turns them off)
 - Business events: order.completed
 
 ---
@@ -546,7 +552,7 @@ app.post('/orders', async (req, res) => {
 });
 ```
 
-Every call is traced. No manual span management in handlers.
+The wrapper traces every call, so handlers need no manual span management.
 
 ---
 
@@ -594,6 +600,7 @@ OpenTelemetry defines [standard attribute names](https://opentelemetry.io/docs/s
 | `http.method` | `method`, `httpMethod` | Automatic HTTP dashboards |
 | `db.system` | `database`, `dbType` | Database performance views |
 | `error.type` | `errorCode` | Error aggregation and alerting |
+| `gen_ai.request.model` | `llm`, `modelName` | Model cost and latency views; see [Point-in-Time Capture](../point-in-time-capture) |
 
 ```typescript
 // ❌ Custom keys - backends don't understand these
@@ -608,6 +615,8 @@ ctx.setAttribute('order.value', total);  // Custom, but follows convention style
 Standardized keys let Grafana, Honeycomb, and Jaeger build dashboards, correlate data across services, and trigger alerts without custom configuration.
 
 For custom business attributes, follow the naming convention: `{domain}.{attribute}` (e.g., `order.item_count`, `payment.method`).
+
+Two more rules bite in production. Do not guess a name when a convention exists: whoever built the dashboard on the conventions sees your homegrown key as an empty panel and concludes it never happened. And bucket high-cardinality values at instrumentation time (`order.value_band: '100-500'` alongside the raw number), because you cannot group a cohort by a field that is unique per request.
 
 ---
 
@@ -703,7 +712,7 @@ Now every log line includes tracing context:
 
 You can now "one-click jump" from a trace span to the detailed logs of that operation. In Grafana, you can link Loki logs to Tempo traces. In Honeycomb, you can query logs and traces together.
 
-This turns your observability from "two separate tools" into a unified debugging experience.
+You debug in one place instead of switching between two separate tools.
 
 ---
 
@@ -752,7 +761,7 @@ Each line has partial context. To reconstruct what happened, you need to:
 }
 ```
 
-Now you can run queries that were previously impossible:
+You can now run queries that scattered log lines can't answer:
 
 ```sql
 -- Find all checkout failures for premium users
@@ -868,13 +877,11 @@ For a complete working example, see the [autotel canonical logs example](https:/
 
 ## What's Next
 
-We've got observable functions. When something fails, we can trace what happened.
+Your functions are now observable: when something fails, you can trace what happened.
 
 But traces expire. Retention keeps them for days or weeks, not years. Some questions arrive long after the trace is gone: "What rate did we convert at? Which card did we charge?"
 
 You answer those from a record you wrote at the moment of the decision.
-
-That's what we'll build next.
 
 ---
 

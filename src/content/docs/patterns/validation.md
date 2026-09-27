@@ -34,7 +34,7 @@ The solution is **layered responsibility**.
 
 ## Three Kinds of Validation
 
-Most confusion comes from treating all "validation" as one thing.
+Teams get confused when they treat all "validation" as one thing.
 
 | Kind                       | Question                             | Where                            | How                         |
 | -------------------------- | ------------------------------------ | -------------------------------- | --------------------------- |
@@ -179,7 +179,7 @@ You enforce these rules **once, at construction**, not on every call.
 async function sendEmail(to: string, subject: string) { ... }
 ```
 
-That `string` doesn't mean "valid email", it means "any sequence of characters", and the type gives you no guarantee about which.
+That `string` means "any sequence of characters", and the type gives you no guarantee that it holds a valid email.
 
 ### Branded Types with Zod
 
@@ -194,7 +194,7 @@ const PositiveAmountSchema = z.number().positive().brand<'PositiveAmount'>();
 type PositiveAmount = z.infer<typeof PositiveAmountSchema>;
 ```
 
-Now you can't accidentally pass a raw string:
+Now you can't pass a raw string by mistake:
 
 ```typescript
 function sendEmail(to: Email, subject: string) { ... }
@@ -258,7 +258,7 @@ const nonEmptyArray = <T extends z.ZodTypeAny>(schema: T) =>
   z.array(schema).min(1).brand<'NonEmptyArray'>();
 ```
 
-> **Insight:** Invariants shift validation left. Once you have an `Email`, you never check if it's valid again. The type proves it was validated.
+> Invariants shift validation left. Once you have an `Email`, you never check if it's valid again. The type proves it was validated.
 
 ---
 
@@ -334,7 +334,7 @@ See [Typed Errors](..//errors) for the full Result pattern.
 
 ## Internal Functions: Context Matters
 
-Not all functions need the same level of defense.
+Functions need different levels of defense.
 
 ### Option A: Trust Invariant Types (Default)
 
@@ -460,7 +460,7 @@ app.post('/transfers', async (req, res) => {
 });
 ```
 
-This separation keeps error handling honest and lets clients respond to each case. Some teams prefer 409 for unique conflicts ("email already exists"); the key is consistency and separating shape errors from domain rule failures.
+This separation keeps error handling honest and lets clients respond to each case. Some teams prefer 409 for unique conflicts ("email already exists"); pick one convention and keep shape errors separate from domain rule failures.
 
 ---
 
@@ -554,7 +554,7 @@ Use wrappers at module or service boundaries, not everywhere.
 
 **Correctness wins by default.**
 
-Validation is cheap. Debugging corrupted state in production is not.
+Validation costs microseconds. Debugging corrupted state in production costs hours.
 
 | Operation                   | Typical Time | Relative Cost     |
 | --------------------------- | ------------ | ----------------- |
@@ -582,7 +582,9 @@ Until then, prefer safety.
 
 **Leaky abstractions.** Business functions accept `string` instead of `Email`, so callers don't know validation is required. The type doesn't communicate the contract.
 
-**Silent coercion.** Zod's `.coerce` silently converts `"abc"` to `NaN` for numbers. Add a refinement to catch invalid inputs.
+**`unknown` past the boundary.** A function deep in the domain takes `input: unknown` and branches on `typeof input === 'string'`. That check tells you the bytes are a string. It does not tell you they are an `Email`. `unknown` belongs in two places, the argument to `safeParse` and an error's `cause`. Anywhere else, someone skipped the parsing and pushed it inward. A linter can hold this line for you; see the [Oxlint chapter](../lint#lint-for-discarded-evidence).
+
+**Silent coercion.** Zod's `.coerce` converts `"abc"` to `NaN` for numbers. Add a refinement to catch invalid inputs.
 
 ```typescript
 // Dangerous - "abc" becomes NaN silently

@@ -3,7 +3,7 @@ title: Composition Patterns
 description: Build extensible systems by combining small, focused pieces instead of predicting every requirement upfront.
 ---
 
-*Previously: [Composing Workflows](..//workflows). We learned to orchestrate multi-step operations. Now let's zoom out to the philosophy that makes it work.*
+*Previously: [Composing Workflows](..//workflows). We learned to orchestrate multi-step operations. Now for the design approach behind it.*
 
 ---
 
@@ -32,7 +32,7 @@ You built a do everything function because you didn't have composition primitive
 
 ## The Composition Mindset
 
-The mindset shift: **don't solve every problem upfront. Build pieces that combine.**
+Instead of solving every problem upfront, **build pieces that combine.**
 
 The monolithic approach tries to predict all requirements:
 
@@ -63,7 +63,7 @@ async function sendNotification(
 }
 ```
 
-Every new requirement adds another conditional. The function grows unbounded.
+Every new requirement adds another conditional, and the function grows without bound.
 
 **The composable approach builds independent pieces that share a uniform interface:**
 
@@ -102,7 +102,7 @@ const channels: SendChannel[] = [sendEmail, sendSms, sendAudit];
 await Promise.all(channels.map(ch => ch({ notification })));
 ```
 
-New channel? Add it to the array. No existing code changes.
+To add a channel, add it to the array. Existing code stays the same.
 
 ```mermaid
 graph TD
@@ -145,7 +145,7 @@ The Single Responsibility Principle is easy to agree with and hard to apply.
 
 "Each unit should have one reason to change" sounds nice until requirements arrive. Then we add flags, options, conditionals, and configuration objects.
 
-**SRP violations show up as configuration.**
+SRP violations show up as configuration:
 
 - `sendNotification(type, options)`
 - `if (audit) …`
@@ -154,7 +154,7 @@ The Single Responsibility Principle is easy to agree with and hard to apply.
 
 Every new requirement adds a new branch. The function accumulates reasons to change.
 
-Composition is how you *resolve* SRP pressure. It's how you defer decisions until you have information.
+Composition *resolves* SRP pressure and lets you defer decisions until you have information.
 
 Instead of teaching one unit about more cases, you:
 
@@ -164,17 +164,15 @@ Instead of teaching one unit about more cases, you:
 
 This is the same refactoring many of us learned years ago in MVVM: move business logic out of ViewModels into small testable units, then compose them instead of growing the ViewModel.
 
-Different era, same lesson.
-
-**SRP makes change happen by addition, not by rewriting existing code.**
+With SRP, you change behavior by adding code instead of rewriting existing code.
 
 ---
 
 ## Fan-Out: Many Destinations, One Call
 
-You need to send the same notification to multiple destinations: email, SMS, audit log all at once.
+You need to send the same notification to multiple destinations: email, SMS, and audit log at once.
 
-Failure semantics (all-or-nothing vs best-effort) are a composition concern, not a channel concern.
+Failure semantics (all-or-nothing vs best-effort) belong to the composition layer. Channels stay unaware of them.
 
 The configuration approach makes the sender know about every destination:
 
@@ -203,7 +201,7 @@ type SendChannel = (args: { notification: Notification }) => Promise<void>;
 
 Each channel follows [fn(args, deps)](..//functions). The factory functions (`createSendEmail`, `createSendSms`, etc.) are **implemented functions** that bind deps at creation time, returning a function that takes only args. This keeps every channel callable the same way, so arrays and wrappers don't care which dependencies it needs:
 
-> This is just pre-binding dependencies:
+> This is pre-binding dependencies:
 > `createSendEmail(deps)` returns `(args) => sendEmail(args, deps)`
 > The core implementation stays `fn(args, deps)`, and the composed interface becomes `(args) => ...`.
 
@@ -285,7 +283,7 @@ export function createNotificationService(deps: NotificationServiceDeps) {
 }
 ```
 
-The actual [composition root](..//functions#where-does-this-live) is where you create clients and wire services together:
+The [composition root](..//functions#where-does-this-live) is where you create clients and wire services together:
 
 ```typescript
 // main.ts (composition root)
@@ -349,7 +347,7 @@ The `notify` function never changes. It doesn't know about Slack, email, or SMS.
 
 ## Wrapping: Add Behavior Without Modifying
 
-You have an email channel that works. Now you need retry logic if sending fails, try again with exponential backoff.
+You have an email channel that works. Now you need retry logic: if sending fails, try again with exponential backoff.
 
 The embedded approach modifies the channel:
 
@@ -370,7 +368,7 @@ export function createSendEmailWithRetry(deps: SendEmailDeps): SendChannel {
 }
 ```
 
-Now the email logic is mixed with retry logic. What if SMS needs different retry behavior? Copy-paste. What if you want retry + logging? The function explodes.
+Now the email logic is mixed with retry logic. What if SMS needs different retry behavior? Copy-paste. What if you want retry + logging? The function keeps growing.
 
 **The wrapping pattern keeps them separate.** A wrapper takes a channel and returns a new channel with the same interface. Because the interface is preserved, wrappers stack.
 
@@ -447,7 +445,7 @@ const channels: SendChannel[] = [
 
 ## Putting It Together
 
-Let's rebuild the notification system from the opening. Small pieces, composed.
+Here is the notification system from the opening, rebuilt from small composed pieces.
 
 ```typescript
 // types.ts, channels/*.ts, wrappers/*.ts (from earlier)
@@ -534,7 +532,7 @@ Failure semantics (retries, escalation, partial failure) are layered on top. See
 
 ## Why This Works (SOLID in Practice)
 
-These patterns embody principles that make code maintainable:
+These patterns map onto the SOLID principles:
 
 **Open/Closed Principle.** Adding push notifications? Write `createSendPush`, add it to the array. The `notify` function never changes. Systems are *open* for extension (new channels) but *closed* for modification (existing code untouched).
 
@@ -542,7 +540,7 @@ These patterns embody principles that make code maintainable:
 
 **Dependency Inversion.** The `notify` function depends on `SendChannel`, not on `EmailClient` or `SmsClient` directly. The policy is "broadcast to channels"; the channels themselves are details supplied at wiring time. Both policy and details depend on the abstraction (`SendChannel`), not on each other.
 
-**Liskov Substitution.** Any `SendChannel` can replace another. Wrappers return `SendChannel`, so `withRetry(sendEmail)` is substitutable wherever `sendEmail` was used. This is why wrappers stack. Each layer preserves the contract.
+**Liskov Substitution.** Any `SendChannel` can replace another. Wrappers return `SendChannel`, so `withRetry(sendEmail)` is substitutable wherever `sendEmail` was used. Wrappers stack because each layer preserves the contract.
 
 The patterns come first. The principles explain *why* they work.
 
@@ -563,9 +561,9 @@ You move each concern outward to its proper layer, keeping core functions focuse
 
 ## What's Next
 
-We've seen how composition enables extensibility. Small pieces combine into complex behavior.
+Composition lets you extend the system by combining small pieces into complex behavior.
 
-But there's something we've glossed over: when things go wrong inside these composed pieces, how do you see what happened? How do you trace a notification through email → retry → logging?
+When something goes wrong inside these composed pieces, how do you see what happened? How do you trace a notification through email → retry → logging?
 
 ---
 

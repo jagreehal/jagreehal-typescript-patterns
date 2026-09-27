@@ -3,7 +3,7 @@ title: Functions Over Classes
 description: Learn the fn(args, deps) pattern for explicit dependency injection, making your code testable and composable.
 ---
 
-_Previously: [Testing External Infrastructure](../testing-external-services). We covered testing infrastructure you control and infrastructure you don't. Now let's see the pattern that makes everything testable._
+_Previously: [Testing External Infrastructure](../testing-external-services). We covered testing infrastructure you control and infrastructure you don't. This chapter covers the pattern that makes everything testable._
 
 I want to talk about dependency injection.
 
@@ -15,7 +15,7 @@ You're already doing it. Every time you pass something to a function instead of 
 
 ## The Problem With Classes
 
-Let's say you're building a user service. The OOP-trained part of your brain might reach for this:
+Say you're building a user service. The OOP-trained part of your brain might reach for this:
 
 ```typescript
 class UserService {
@@ -43,7 +43,7 @@ class UserService {
 
 This looks fine at first. Look at `getUser`. It only needs `db` and `logger`. But to test it, you have to satisfy the _entire_ constructor, including `cache`, `mailer`, and `metrics` that it doesn't use.
 
-A new developer joins. They ask: "What does `getUser` need?" You point to the constructor: five dependencies. They mock all five. The test passes. Two months later, someone adds `this.metrics.increment('user_fetched')` inside `getUser`. The test still passes, but now it's lying. It doesn't verify that metric increment ever happened, because the mock was set up blindly.
+A new developer joins. They ask: "What does `getUser` need?" You point to the constructor: five dependencies. They mock all five. The test passes. Two months later, someone adds `this.metrics.increment('user_fetched')` inside `getUser`. The test still passes, but now it's lying. It doesn't verify that metric increment ever happened, because someone set up the mock blindly.
 
 As the class grows, the constructor accumulates more and more dependencies. Every method inherits access to everything, whether it needs it or not. You end up with a "god object" where any method might touch any dependency via `this`.
 
@@ -69,7 +69,7 @@ graph TD
 
 ## A Different Shape
 
-What if we wrote functions instead?
+Try functions instead:
 
 ```typescript
 // Define Args and Deps explicitly (contract-first)
@@ -92,11 +92,11 @@ Now look at that signature. You can see _exactly_ what `getUser` needs:
 
 A new developer joins. They ask: "What does `getUser` need?" You point to the types: `GetUserArgs` and `GetUserDeps`. If someone adds a new dependency or argument, the type changes. Tests that don't mock it fail to compile. You can't accidentally ignore new dependencies.
 
-No hidden state. No constructor that accumulates junk. The function declares its contract explicitly.
+The function has no hidden state and no constructor that accumulates junk. It declares its contract explicitly.
 
 Yes, this is functions and closures, by design.
 
-This is the core pattern:
+The core pattern:
 
 ```typescript
 fn(args, deps);
@@ -178,7 +178,7 @@ user/
 └── create-user.int.test.ts
 ```
 
-Each file is small. Each test file covers one function. Easy to navigate, easy to maintain.
+Each file is small and each test file covers one function, so navigation and maintenance stay easy.
 
 With classes, this pattern breaks down:
 
@@ -197,7 +197,7 @@ That test file becomes a problem:
 
 **With classes, this is unbounded.** What seems manageable at 3 methods becomes painful at 10 and unworkable at 20. There's no natural stopping point. The class accumulates methods, the test file accumulates describe blocks, and both grow without limit.
 
-With functions, you hit the natural boundary: one function, one file, one test file. Growth means adding new files, not bloating existing ones.
+With functions, you hit the natural boundary: one function, one file, one test file. Growth means adding new files while existing ones stay small.
 
 ### 4. No Hidden Coupling
 
@@ -221,7 +221,7 @@ class UserService {
 }
 ```
 
-You're reviewing a PR that changes `sendWelcomeEmail` to require an API key. The PR looks simple: add `apiKey` to the constructor, use it in `sendWelcomeEmail`. But wait, what calls `sendWelcomeEmail`? You grep for it: called from `createUser`, `reactivateUser`, and `inviteUser`. Do all those callers have the context needed for this new API call? You can't tell from the PR. You have to trace through every method that touches `this`.
+You're reviewing a PR that changes `sendWelcomeEmail` to require an API key. The PR looks simple: add `apiKey` to the constructor, use it in `sendWelcomeEmail`. But what calls `sendWelcomeEmail`? You grep for it: called from `createUser`, `reactivateUser`, and `inviteUser`. Do all those callers have the context needed for this new API call? You can't tell from the PR. You have to trace through every method that touches `this`.
 
 With functions, collaborators must be explicit:
 
@@ -246,17 +246,17 @@ async function createUser(args: CreateUserArgs, deps: CreateUserDeps) {
 }
 ```
 
-Want to know what `createUser` depends on? Look at its deps type. It's right there. And because we use `typeof` with the real function import, `Cmd+Click` takes you straight to the implementation, no chasing through type aliases.
+To see what `createUser` depends on, look at its deps type. And because we use `typeof` with the real function import, `Cmd+Click` takes you straight to the implementation, no chasing through type aliases.
 
 ---
 
 ## When Your Codebase Has No Tests
 
-This is where the pattern pays for itself fastest.
+The pattern pays for itself fastest here.
 
 Most codebases don't have great test coverage. When you point an AI coding agent at code like that, the first thing it tries to do is write tests. And the first thing it struggles with is mocking.
 
-With classes, the agent has to figure out the constructor's full dependency list, mock everything (including dependencies the method doesn't use), navigate `vi.mock()` or `jest.mock()` hoisting rules, and deal with `this` bindings and private methods. The result is fragile tests full of ceremony that mock the wrong things and pass for the wrong reasons. The agent scales output fast, and scales entropy with it.
+With classes, the agent has to figure out the constructor's full dependency list, mock everything (including dependencies the method doesn't use), navigate `vi.mock()` or `jest.mock()` hoisting rules, and deal with `this` bindings and private methods. The result is fragile tests full of ceremony that mock the wrong things and pass for the wrong reasons. The agent produces output fast, and the mess grows at the same rate.
 
 With `fn(args, deps)`, the agent's job becomes mechanical:
 
@@ -264,7 +264,7 @@ With `fn(args, deps)`, the agent's job becomes mechanical:
 - Look at the `Args` type: that's what to pass in
 - Look at the return type: that's what to assert on
 
-No guessing. No over-mocking. No `vi.mock()` hoisting gymnastics.
+The agent doesn't guess, over-mock, or fight `vi.mock()` hoisting rules.
 
 ### Give the Agent the Contract
 
@@ -302,7 +302,7 @@ The agent can see:
 - **What it depends on**: `CreateOrderDeps`, three things to mock, nothing more
 - **What comes out**: `CreateOrderResult` with exact field shapes
 
-Provide example data, schemas, and return shapes, and the test practically writes itself:
+Provide example data, schemas, and return shapes, and the agent has everything it needs to write the test:
 
 ```typescript
 it('creates an order and charges payment', async () => {
@@ -320,7 +320,7 @@ it('creates an order and charges payment', async () => {
 });
 ```
 
-No constructor ceremony. No `vi.mock()`. The dependency surface is right there in the type.
+The test needs no constructor ceremony and no `vi.mock()`. The dependency surface sits in the type.
 
 Compare that to what the agent would have to produce for a class:
 
@@ -349,7 +349,7 @@ Start writing functions as `fn(args, deps)`.
 
 That single change gives agents (and humans) a deterministic testing seam. When the dependency surface is visible, mocking is mechanical. When types define the contract, the agent doesn't have to guess. When each function is its own file, the context stays small enough for the agent to hold in its window.
 
-It's a seam, and the smallest change that moves you from zero tests to meaningful coverage.
+It gives you a seam, and it's the smallest change that moves you from zero tests to meaningful coverage.
 
 ### Each Function Is a Self-Contained Prompt
 
@@ -362,7 +362,7 @@ get-user.ts       ← the function + its types
 get-user.test.ts  ← the test
 ```
 
-The types at the top of the file tell the complete story. The agent doesn't need to understand the rest of the service, the rest of the module, or the dependency graph. One file, one function, one contract. That's the entire context window it needs.
+The types at the top of the file tell the complete story. The agent doesn't need to understand the rest of the service, the rest of the module, or the dependency graph. One file holds one function and one contract, and the agent needs nothing else in its context window.
 
 ### One Example Teaches the Whole Codebase
 
@@ -370,9 +370,9 @@ Because every function follows the same shape, you can show the agent a single e
 
 > "Here's how we write functions and tests in this codebase. Follow this pattern."
 
-And it replicates that pattern across every function it writes or tests. The pattern is _uniform_. There's no variation in how dependencies are accessed, no per-service quirks, no "this service uses a factory but that one uses a singleton."
+The agent replicates that pattern across every function it writes or tests. The pattern is _uniform_. There's no variation in how dependencies are accessed, no per-service quirks, no "this service uses a factory but that one uses a singleton."
 
-With classes, every service is structured differently. Constructor patterns vary. Some use property injection, some use method injection, some use module-level singletons. The agent has to re-learn the conventions per file.
+With classes, each service has its own structure. Constructor patterns vary. Some use property injection, some use method injection, some use module-level singletons. The agent has to re-learn the conventions per file.
 
 With `fn(args, deps)`, the conventions are the same everywhere. One example in your project rules or prompt, and the agent stays consistent across hundreds of functions.
 
@@ -395,7 +395,7 @@ With class-based code, errors are noisier: constructor overload mismatches, `thi
 
 When two agents (or an agent and a human) work on the same class, they're editing the same file. Constructor changes, new methods, import additions, all competing for the same lines.
 
-With functions, `get-user.ts` and `create-order.ts` are separate files. Two agents can work on them simultaneously with zero chance of conflict. This is practical: you can fan out test-writing across your codebase without serializing the work.
+With functions, `get-user.ts` and `create-order.ts` are separate files. Two agents can work on them simultaneously with zero chance of conflict. In practice, you can fan out test-writing across your codebase without serializing the work.
 
 ### The Agent Knows When It's Done
 
@@ -425,7 +425,7 @@ Without this kind of structural constraint, AI-generated code is a wild west. Th
 
 Linters and code review help, but they're _after-the-fact_ corrections that catch problems already there. The `fn(args, deps)` pattern prevents the problems from being introduced. It's better to make the wrong thing hard to write than to detect it afterward.
 
-And this is where composition comes in. When every function has an explicit, typed dependency surface, composing functions becomes mechanical:
+Composition builds on this. When every function has an explicit, typed dependency surface, composing functions becomes mechanical:
 
 ```typescript
 // Each function declares exactly what it needs
@@ -446,7 +446,7 @@ async function processOrder(args: ProcessOrderArgs, deps: ProcessOrderDeps) {
 
 You can see every dependency that `processOrder` needs by reading its type. The agent can compose these functions because the interfaces are uniform. A human reviewer can verify the composition because the dependency surface is right there in the signature.
 
-Without the pattern, composition is guesswork. With it, composition is type intersection.
+With the pattern, composing functions means intersecting their deps types instead of guessing.
 
 ---
 
@@ -483,7 +483,7 @@ await userService.getUser({ userId: '123' });
 await userService.createUser({ name: 'Alice', email: 'alice@example.com' });
 ```
 
-No deps passing at the call site. The factory bound them once.
+The call site passes no deps; the factory bound them once.
 
 You get both worlds:
 
@@ -560,7 +560,7 @@ In other words:
 fn(deps) -> fn(args) = fn(args, deps)
 ```
 
-This is commonly known as **partial application**. We keep the core function in the explicit form `fn(args, deps)` and partially apply `deps` at the boundary to produce a cleaner call signature.
+This technique is called **partial application**. We keep the core function in the explicit form `fn(args, deps)` and partially apply `deps` at the boundary to produce a cleaner call signature.
 
 ### Example: one implementation, many "wired" variants
 
@@ -619,7 +619,7 @@ You can write everything curried, but keeping the implementation in the explicit
 - **fewer accidental closures in hot paths**
 - **a consistent signature for wrappers** (retry/log/trace/etc.)
 
-Implement in the explicit form, then use partial application at the boundary to derive ergonomic call shapes. This is a language-level technique, not a framework pattern.
+Implement in the explicit form, then use partial application at the boundary to derive ergonomic call shapes. Partial application is a language-level technique and needs no framework.
 
 ### Optional: a tiny helper (keeps examples tight)
 
@@ -646,7 +646,7 @@ This helper is a partial application utility. It reinforces that the underlying 
 
 You might wonder why this pattern uses two parameters instead of a single object like `{ args, deps }`.
 
-This is intentional: **`args` and `deps` have different lifetimes**.
+The reason: **`args` and `deps` have different lifetimes**.
 
 - `args` are per-call data.
 - `deps` are long-lived collaborators.
@@ -659,7 +659,7 @@ Keeping them separate makes dependency bloat harder to hide, keeps call sites fo
 
 You'll sometimes see people add a third parameter like `fn(args, deps, opts)`. Don't.
 
-"Options" aren't a third category. They always belong to one of the two you already have:
+"Options" always belong to one of the two categories you already have:
 
 - **Per-call behavior** (e.g. `dryRun`, `sendEmail: false`, `includeDeleted`) → part of the request, belongs in `args`
 - **Configuration chosen at wiring time** (feature flags, defaults, limits, environment-specific behavior) → belongs in `deps` as injected config
@@ -777,7 +777,7 @@ Classes become problematic when:
 - **Constructor grows** to satisfy every method's needs.
 - **Methods accumulate** with no natural stopping point.
 
-For business logic? Prefer functions.
+For business logic, prefer functions.
 
 ---
 
@@ -1237,59 +1237,53 @@ Enable `verbatimModuleSyntax` in `tsconfig.json` to prevent accidental runtime i
 }
 ```
 
-#### Enforcement: ESLint
+#### Enforcement: Oxlint
 
-Add a rule to ESLint to prevent imports from infrastructure.
+Add a rule so domain code cannot import from infrastructure. Scope it with `overrides` so only the domain layer is restricted.
 
-**ESM (eslint.config.mjs):**
+```ts
+// oxlint.config.ts
+import { defineConfig } from 'oxlint';
 
-```javascript
-export default {
-  rules: {
-    'no-restricted-imports': [
-      'error',
-      {
-        patterns: [
-          {
+export default defineConfig({
+  overrides: [
+    {
+      files: ['src/domain/**'],
+      rules: {
+        'no-restricted-imports': ['error', {
+          patterns: [{
             group: ['**/infra/**'],
-            message:
-              'Domain code must not import from infra. Inject dependencies instead.',
-          },
-        ],
+            message: 'Domain code must not import from infra. Inject dependencies instead.',
+          }],
+        }],
       },
-    ],
-  },
-};
+    },
+  ],
+});
 ```
 
 ---
 
 ## Enforcing the Pattern
 
-You can enforce object parameters with ESLint using [eslint-plugin-prefer-object-params](https://github.com/jagreehal/eslint-plugin-prefer-object-params):
+You can enforce object parameters with a twenty-five-line Oxlint rule that allows `fn(args, deps)` and flags a third positional parameter; the [Oxlint chapter](../lint#enforcing-function-signatures) has the source. ([eslint-plugin-prefer-object-params](https://github.com/jagreehal/eslint-plugin-prefer-object-params) is the same rule for ESLint.)
 
-```bash
-npm install -D eslint-plugin-prefer-object-params
-```
+```ts
+// oxlint.config.ts
+import { defineConfig } from 'oxlint';
 
-```javascript
-// eslint.config.js
-import preferObjectParams from 'eslint-plugin-prefer-object-params';
-
-export default [
-  {
-    plugins: { 'prefer-object-params': preferObjectParams },
-    rules: {
-      'prefer-object-params/prefer-object-params': 'error',
-    },
+export default defineConfig({
+  jsPlugins: [{ name: 'local', specifier: './tools/oxlint/prefer-object-params.ts' }],
+  rules: {
+    'local/prefer-object-params': 'error',
   },
-];
+});
 ```
 
 Now this gets flagged:
 
 ```typescript
-// ESLint error: prefer object params
+// local(prefer-object-params): Prefer a single object parameter over 3 positional parameters
 function createUser(name: string, email: string, age: number) {}
 ```
 
@@ -1300,7 +1294,7 @@ And this passes:
 function createUser(args: { name: string; email: string; age: number }) {}
 ```
 
-The rule is pragmatic. It ignores single-parameter functions, constructors, and test files by default. It catches the cases where positional params hurt readability: when there are multiple arguments and order starts to matter.
+The rule ignores single-parameter functions, constructors, and test files by default. It catches the cases where positional params hurt readability: when there are multiple arguments and order starts to matter.
 
 ---
 
@@ -1308,7 +1302,7 @@ The rule is pragmatic. It ignores single-parameter functions, constructors, and 
 
 Critics sometimes worry that creating many small objects (`args` objects, `deps` bags, factory functions) increases garbage collection pressure.
 
-**The reality:** Modern JS engines use generational garbage collection. Short-lived objects (like the temporary objects created during request handling) are collected in the young generation, which is optimized for exactly this pattern.
+Modern JS engines use generational garbage collection. Short-lived objects (like the temporary objects created during request handling) are collected in the young generation, which is optimized for exactly this pattern.
 
 For I/O-bound web applications, object allocation is orders of magnitude faster than any database query or HTTP request. The architectural clarity and type safety of the `fn(args, deps)` pattern far outweigh any micro-overhead.
 
@@ -1320,21 +1314,19 @@ For I/O-bound web applications, object allocation is orders of magnitude faster 
 
 For typical web services, **don't optimize for GC**. Optimize for correctness, testability, and maintainability.
 
-> Once you see `fn(args, deps)` as "logic + environment", everything else (testing, composition, wiring, frameworks) falls out.
+> Treat `fn(args, deps)` as "logic + environment". Testing, composition, wiring, and framework integration follow from that split.
 
 ---
 
 ## What's Next
 
-We have clean functions with explicit deps. But there's something we've glossed over.
+We have clean functions with explicit deps, but we've glossed over the data they receive.
 
 When someone calls `getUser({ userId: '123' }, deps)`... how do we know `userId` is valid? What if it's an empty string? What if `createUser` receives an email that isn't an email?
 
 Our functions have clean signatures, but right now they're _trusting_ that the data they receive is correct. And in a web application, data comes from the outside world. It comes from HTTP requests, queue messages, CLI arguments. It comes from users who might type anything.
 
 Where does validation fit into `fn(args, deps)`?
-
-That's what we'll figure out next.
 
 ---
 

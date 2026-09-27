@@ -7,9 +7,9 @@ description: Validate and type configuration at startup. Load secrets from secre
 
 ---
 
-Your application needs configuration. Database URLs, API keys, feature flags, service endpoints.
+Your application needs configuration: database URLs, API keys, feature flags, service endpoints.
 
-Following the [12-Factor App](https://12factor.net/config) methodology, configuration should be stored in the environment, not in code. Security considerations follow:
+Following the [12-Factor App](https://12factor.net/config) methodology, you store configuration in the environment, not in code. That raises three security concerns:
 
 1. **Environment variables are untyped.** They're strings that might be missing or invalid.
 2. **Secrets in `process.env` are a security risk.** They can leak through `/proc/self/environ` on Linux, appear in error messages, or be accessible to child processes.
@@ -27,7 +27,7 @@ app.listen(Number(port));  // Might be NaN
 const apiKey = process.env.API_KEY;  // ⚠️ Accessible to child processes, logs, /proc/self/environ
 ```
 
-It's Monday morning. Your weekend deploy is failing. The error: `Cannot read property 'findUser' of undefined`. You check the database. It's running. You check the connection code. It's fine. Two hours later, you find it: someone added `DB_URL` to the new deployment config instead of `DATABASE_URL`. TypeScript didn't complain. The app started. It crashed on the first database call.
+It's Monday morning. Your weekend deploy is failing. The error: `Cannot read property 'findUser' of undefined`. You check the database, and it's running. The connection code looks fine. Two hours later, you find it: someone added `DB_URL` to the new deployment config instead of `DATABASE_URL`. TypeScript didn't complain, and the app started, then crashed on the first database call.
 
 You're trusting that `process.env` has the right values. In production, a missing or invalid environment variable crashes your app on startup. Worse, secrets in `process.env` can leak.
 
@@ -50,11 +50,11 @@ The original 12-factor guidance predates modern security practices. We distingui
 
 - Child processes inherit all environment variables
 - On Linux, `/proc/self/environ` exposes the environment to any process with read access. This is a common vector for secret exfiltration if an attacker gains limited local access
-- Error messages and stack traces may accidentally log environment variables
+- Error messages and stack traces may log environment variables
 - Debugging tools and process monitors can read environment variables
 - Container orchestration tools often expose environment variables in logs or dashboards
 
-Your app has a bug that logs `process.env` during crashes for debugging. It goes to production. A user triggers the bug. Your logs now contain `DATABASE_PASSWORD=super-secret-123`, `STRIPE_API_KEY=sk_live_...`, visible to anyone with log access. The security team calls. It's going to be a long day.
+Your app has a bug that logs `process.env` during crashes for debugging. It goes to production. A user triggers the bug. Your logs now contain `DATABASE_PASSWORD=super-secret-123`, `STRIPE_API_KEY=sk_live_...`, visible to anyone with log access. Then the security team calls.
 
 **Why memory is safer:** Secrets loaded into your Node.js process's heap memory stay isolated to that process's address space. They're invisible to environment scraping tools, child processes, and `/proc` inspection. The kernel enforces this isolation through OS-level security boundaries.
 
@@ -185,7 +185,7 @@ const config = await resolveAsync({
 });
 ```
 
-**Important:** The `awsSecrets` resolver loads secrets into the config object in memory. They never enter `process.env`, protecting them from leaks.
+The `awsSecrets` resolver loads secrets into the config object in memory. They never enter `process.env`, protecting them from leaks.
 
 **Ephemeral Credentials:** Modern secret managers can generate time-limited, dynamic credentials instead of static secrets. For example, AWS Secrets Manager can provide short-lived database credentials that your app refreshes at the boundary. If a credential leaks, its short lifetime limits the blast radius compared to long-lived secrets.
 
@@ -213,7 +213,7 @@ const config = await resolveAsync({
 
 ## Dependency Injection for Testability
 
-Remember our pattern? Configuration resolution should accept resolvers as parameters:
+Following the `fn(args, deps)` pattern, configuration resolution accepts resolvers as parameters:
 
 ```typescript
 // config.ts
@@ -267,7 +267,7 @@ it('should resolve configuration', async () => {
 });
 ```
 
-No `vi.mock()` needed. Pass a resolver object. This is the same dependency injection pattern we've been using throughout.
+You don't need `vi.mock()`. Pass a resolver object, the same dependency injection pattern used throughout.
 
 ---
 
@@ -290,7 +290,7 @@ const config = resolve({
 // config.API_KEY: string | undefined
 ```
 
-No more `string | undefined` or casting. The types match reality.
+You drop the `string | undefined` checks and casts, because the types match what you loaded.
 
 ---
 
@@ -315,7 +315,7 @@ async function getUser(args, deps) {
 }
 ```
 
-If configuration is invalid, the app fails to start. You know immediately, not when a user tries to use a feature.
+If configuration is invalid, the app fails to start. You find out at deploy time, before a user hits the broken feature.
 
 ---
 
@@ -359,7 +359,7 @@ If someone tries to load secrets from `.env` or `process.env` in production, it 
 
 - `process.env` is accessible to child processes
 - On Linux, `/proc/self/environ` exposes all environment variables
-- Error messages and logs may accidentally include environment variables
+- Error messages and logs may include environment variables
 - Secrets in memory are isolated to your application process
 
 ---
@@ -450,7 +450,7 @@ Configuration is validated once, at startup. Your business functions receive typ
 
 ## The "Pit of Success" Configuration Checklist
 
-These rules ensure your configuration is secure and production-ready:
+Follow these rules to keep configuration secure in production:
 
 ### Fail-Fast Startup
 
@@ -521,7 +521,7 @@ Run TruffleHog or Gitleaks to catch committed secrets before they reach producti
 
 We've established patterns. Functions take object parameters. Dependencies are injected. Infrastructure stays separate. Configuration is validated at startup.
 
-Now let's see how everything comes together at the HTTP boundary, where your validated, typed, resilient code meets the outside world.
+Next, the HTTP boundary, where your validated, typed, resilient code meets the outside world.
 
 ---
 

@@ -7,18 +7,18 @@ description: A complete architecture for TypeScript applications with testabilit
 
 ---
 
-Over this series, we've established a complete architecture for TypeScript applications:
+Over this series, you've built a complete architecture for TypeScript applications:
 
 0. **Testability drives design.** `vi.mock` is fragile (path coupling, hoisting, global state); explicit deps with `vitest-mock-extended` are simple and type-safe.
 1. **Functions over classes.** `fn(args, deps)` for explicit dependencies. Use factories at the boundary to wire dependencies once.
 2. **Validation at the boundary.** Zod guards the edges with branded types; functions trust their input. Parse, don't validate.
 3. **Never throw.** Result types make failure explicit and composable. Use `createWorkflow` and `step()` for railway-oriented programming.
-4. **Trace orthogonally.** Wrap functions with `trace()` from autotel. Observability without cluttering business logic. Use semantic conventions and correlate logs with traces.
+4. **Trace orthogonally.** Wrap functions with `trace()` from autotel so tracing stays out of business logic. Use semantic conventions and correlate logs with traces.
 5. **Resilience in workflows.** Use `step.retry()` and `step.withTimeout()` at the workflow level. Never retry non-idempotent operations. Use jitter to prevent thundering herd.
 6. **Configuration at startup.** Validate and type config at the boundary with `node-env-resolver`. Secrets in memory only, never in `process.env`. Use secret managers and ephemeral credentials.
 7. **API design.** Thin handlers translate HTTP to domain. Consistent error envelopes. Health checks, graceful shutdown, security headers.
 8. **TypeScript enforces types.** Beyond `strict`: `noUncheckedIndexedAccess`, `erasableSyntaxOnly`, `verbatimModuleSyntax`. Use `ts-reset` to close `any` leaks.
-9. **ESLint enforces patterns.** Lint-time checks catch architectural violations (boundaries, object params, server/client separation). Rules fail builds rather than warn.
+9. **Oxlint enforces patterns.** Lint-time checks catch architectural violations (boundaries, object params, server/client separation). Rules fail builds rather than warn.
 10. **Performance testing proves it.** Load tests (smoke, load, stress, soak, spike) reveal bottlenecks; chaos tests prove resilience patterns work.
 
 ---
@@ -35,7 +35,7 @@ Code that follows these patterns is:
 | **Resilient** | Transient failures don't crash the system; workflows handle retries |
 | **Type-safe** | Configuration is validated and typed at startup; `ts-reset` closes `any` leaks; `noUncheckedIndexedAccess` prevents undefined array access |
 | **Secure** | Secrets loaded into memory only, never in `process.env`; secret scanning in CI (TruffleHog/Gitleaks); redaction for logs and span attributes |
-| **Enforced** | TypeScript and ESLint catch violations before code ships |
+| **Enforced** | TypeScript and Oxlint catch violations before code ships |
 | **Proven** | Load tests and chaos tests verify performance and resilience under pressure |
 | **Maintainable** | Each concern lives in one place; no hidden coupling |
 
@@ -50,7 +50,7 @@ import type { Database, Logger } from '../infra/types';
 import { z } from 'zod';
 import { ok, err, type Result } from '../lib/result';
 import { trace, type TraceContext } from 'autotel';
-import { createWorkflow } from 'awaitly/workflow';
+import { createWorkflow } from 'awaitly';
 
 // 1. Validation schema at the boundary
 const CreateUserArgsSchema = z.object({
@@ -115,15 +115,16 @@ export async function createUserWorkflow(
   args: CreateUserArgs,
   deps: CreateUserDeps
 ) {
-  return createUserWithRetry(async (step) => {
+  return createUserWithRetry.run(async ({ step }) => {
     // Retry with exponential backoff for transient failures
     const user = await step.retry(
+      'createUser',
       () => createUser(args, deps),
       {
         attempts: 3,
         backoff: 'exponential',
         initialDelay: 100,
-        retryOn: (error) => error.type === 'DB_ERROR',
+        retryIf: (error) => error.type === 'DB_ERROR',
       }
     );
     
@@ -169,7 +170,7 @@ src/
 | File | Purpose |
 | ---- | ------- |
 | `tsconfig.json` | Type enforcement (`strict`, `noUncheckedIndexedAccess`, `erasableSyntaxOnly`, `verbatimModuleSyntax`) |
-| `eslint.config.mjs` | Pattern enforcement (boundaries, object params, server/client separation) |
+| `oxlint.config.ts` | Pattern enforcement (boundaries, object params, server/client separation) |
 | `reset.d.ts` | Import `@total-typescript/ts-reset` to close `any` leaks |
 | `src/lib/result.ts` | `Result<T, E>` type with `ok()` and `err()` helpers |
 | `load-tests/*.js` | k6 scripts for smoke, load, stress, soak, spike tests |
@@ -185,7 +186,7 @@ src/
 6. **Resilience in workflows.** Use `step.retry()` and `step.withTimeout()` at the workflow level, not in business functions. Never retry non-idempotent operations.
 7. **Configure at startup.** Validate config at the boundary with `node-env-resolver`. Secrets in memory only, never in `process.env`. Use secret managers in production.
 8. **Thin handlers.** HTTP handlers translate between HTTP and domain. Consistent error envelopes. Health checks and graceful shutdown.
-9. **Enforce with tooling.** TypeScript (`strict`, `noUncheckedIndexedAccess`, `ts-reset`) for types. ESLint (boundaries, object params) for patterns. Everything fails fast.
+9. **Enforce with tooling.** TypeScript (`strict`, `noUncheckedIndexedAccess`, `ts-reset`) for types. Oxlint (boundaries, object params) for patterns. Everything fails fast.
 10. **Test progressively.** Unit → Integration → Load → Chaos. Use vitest-mock-extended for typed mocks. Use Faker for test stubs. Each layer catches different bugs.
 
 ---
@@ -223,23 +224,21 @@ This architecture uses these tools:
 | `node-env-resolver` | Configuration validation and secret management |
 | `@total-typescript/ts-reset` | Fixes standard library `any` leaks |
 | `k6` | Load testing and performance validation |
-| `eslint-plugin-prefer-object-params` | Enforces object parameters |
-| `eslint-plugin-boundaries` | Enforces architectural boundaries |
-| `eslint-plugin-no-server-imports` | Enforces server/client separation |
+| `oxlint` | Fast linter with the ESLint, typescript-eslint, import, unicorn and react rule sets built in |
+| `prefer-object-params` (local Oxlint rule) | Enforces object parameters |
+| `eslint-plugin-no-server-imports` | Enforces server/client separation (loaded through Oxlint `jsPlugins`) |
 
 ---
 
 ## Where to Go Next
 
-This series covered the core patterns. There's more to explore:
+Beyond the core patterns, you can explore:
 
 - **Property-based testing:** Generate thousands of test cases automatically
 - **Contract testing:** Verify API contracts between services
 - **Distributed tracing:** Trace requests across multiple services
-- **Continuous profiling:** Find bottlenecks in production, not just during load tests
+- **Continuous profiling:** Find bottlenecks in production as well as during load tests
 - **Framework integration:** Applying these patterns in Next.js, Remix, TanStack Start
-
-You have the foundation now. Build on it.
 
 ---
 

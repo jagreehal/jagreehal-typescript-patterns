@@ -5,12 +5,18 @@ import starlightThemeNova from 'starlight-theme-nova';
 import tailwindcss from '@tailwindcss/vite';
 import astroMermaid from 'astro-mermaid';
 
+// Use base path for GitHub Pages deployment
+// For local development, you can override with: BASE=/ pnpm dev
+const base = process.env.BASE || '/jagreehal-typescript-patterns';
+
 // https://astro.build/config
 export default defineConfig({
   site: 'https://jagreehal.github.io',
-  // Use base path for GitHub Pages deployment
-  // For local development, you can override with: BASE=/ pnpm dev
-  base: process.env.BASE || '/jagreehal-typescript-patterns',
+  base,
+  // The ESLint chapter became the Oxlint chapter; keep the old URL working
+  redirects: {
+    '/patterns/eslint': `${base.replace(/\/$/, '')}/patterns/lint`,
+  },
   integrations: [
     astroMermaid(),
     starlight({
@@ -18,6 +24,10 @@ export default defineConfig({
       description: 'Production-ready patterns for testable, type-safe TypeScript applications',
       plugins: [starlightThemeNova()],
       tableOfContents: false,
+      components: {
+        // Adds a "copy page as Markdown" button beside every chapter title
+        PageTitle: './src/components/PageTitle.astro',
+      },
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/jagreehal/jagreehal-typescript-patterns' },
       ],
@@ -27,7 +37,13 @@ export default defineConfig({
           items: [
             { label: 'Testing & Testability', slug: 'patterns/testing' },
             { label: 'Testing Levels', slug: 'patterns/testing-levels' },
+            { label: 'Browser Journeys', slug: 'patterns/browser-journeys' },
+            { label: 'Test Data and Fakes', slug: 'patterns/test-data' },
             { label: 'Testing External Infrastructure', slug: 'patterns/testing-external-services' },
+            { label: 'Simulating Third-Party Services', slug: 'patterns/third-party-doubles' },
+            { label: 'Testing Failure Scenarios', slug: 'patterns/testing-failure-scenarios' },
+            { label: 'Test Quality', slug: 'patterns/test-quality' },
+            { label: 'CI Gates and Triage', slug: 'patterns/ci-gates' },
             { label: 'Functions Over Classes', slug: 'patterns/functions' },
             { label: 'Validation at the Boundary', slug: 'patterns/validation' },
             { label: 'Typed Errors', slug: 'patterns/errors' },
@@ -44,7 +60,7 @@ export default defineConfig({
           items: [
             { label: 'Configuration at Startup', slug: 'patterns/configuration' },
             { label: 'TypeScript Config', slug: 'patterns/typescript-config' },
-            { label: 'ESLint Rules', slug: 'patterns/eslint' },
+            { label: 'Lint Rules', slug: 'patterns/lint' },
             { label: 'Monorepo Patterns', slug: 'patterns/monorepos' },
           ],
         },
@@ -59,7 +75,7 @@ export default defineConfig({
           label: 'Bonus',
           items: [
             { label: 'AI Coding Agents', slug: 'patterns/ai-agents' },
-            { label: 'React Architecture', slug: 'patterns/react' },
+            { label: 'React Architecture', autogenerate: { directory: 'patterns/react' } },
           ],
         },
       ],

@@ -44,7 +44,7 @@ async function checkout(
 }
 ```
 
-What happens when step 2 fails after step 1 succeeds?
+Suppose step 2 fails after step 1 succeeds.
 
 The customer is charged, but there's no order. The reservation never ran. You have money and no record of what it's for. The `catch` block doesn't help, since it doesn't know which step succeeded before the failure.
 
@@ -58,9 +58,9 @@ graph LR
     style C fill:#fbbf24,stroke:#0f172a,stroke-width:2px,color:#0f172a
 ```
 
-This code is honest about *individual* failures but silent about *partial* failures. What do you do when step 2 of 5 fails?
+This code reports *individual* failures but stays silent about *partial* ones, such as step 2 of 5 failing.
 
-The problem is that the code doesn't record which side effects already happened. Without that, you can't compensate, retry, or resume from a checkpoint.
+The code doesn't record which side effects already happened. Without that, you can't compensate, retry, or resume from a checkpoint.
 
 ---
 
@@ -69,8 +69,7 @@ The problem is that the code doesn't record which side effects already happened.
 `createWorkflow` gives you a structured way to compose Result-returning functions:
 
 ```typescript
-import { ok, err, type AsyncResult } from 'awaitly';
-import { createWorkflow } from 'awaitly/workflow';
+import { ok, err, createWorkflow, type AsyncResult } from 'awaitly';
 
 // Define operations that return Results
 async function chargePayment(
@@ -109,20 +108,20 @@ Now compose them with a workflow:
 
 ```typescript
 // Pass operations to createWorkflow - they're used for error type inference
-// and injected into the callback as the second parameter
+// and handed back to the callback as bound `steps`
 const checkout = createWorkflow({ chargePayment, reserveInventory, createOrder });
 
-const result = await checkout(async (step, deps) => {
-  // deps contains { chargePayment, reserveInventory, createOrder }
-  const payment = await step(() => deps.chargePayment({ amount: 99, method: 'card_xxx' }));
-  const reservation = await step(() => deps.reserveInventory({ items: cartItems }));
-  const order = await step(() => deps.createOrder({ userId, payment, reservation }));
+const result = await checkout.run(async ({ steps }) => {
+  // steps mirrors { chargePayment, reserveInventory, createOrder }
+  const payment = await steps.chargePayment({ amount: 99, method: 'card_xxx' });
+  const reservation = await steps.reserveInventory({ items: cartItems });
+  const order = await steps.createOrder({ userId, payment, reservation });
 
   return order;
 });
 ```
 
-The `step()` function accepts an async function returning `AsyncResult` (or a prebuilt step like an approval step). It:
+Each `steps.*` call is a step named after the dep. When you need per-step options (retries, timeouts, compensation, an explicit cache key), use the explicit form, `step('id', () => deps.fn(args), opts)`, which is also on the callback: `async ({ steps, step, deps }) => ...`. Either way, a step:
 
 - Unwraps `ok` results and gives you the value
 - Short-circuits on `err` and returns without running the rest
@@ -133,18 +132,19 @@ The `step()` function accepts an async function returning `AsyncResult` (or a pr
 // 'PAYMENT_DECLINED' | 'PAYMENT_ERROR' | 'OUT_OF_STOCK' | 'ORDER_CREATION_FAILED' | UnexpectedError
 ```
 
-`UnexpectedError` captures failures that weren't returned as `err()` by your operations. This is usually a thrown exception (including those from libraries) or anything else that escapes your typed error model (unexpected states). It wraps the original error with context about which step failed.
+`UnexpectedError` captures failures that weren't returned as `err()` by your operations. This is usually a thrown exception (including those from libraries) or anything else that escapes your typed error model (unexpected states). The original error is on `result.error.cause`.
 
 If you want timeouts or network failures to be typed, catch them inside the operation and return a domain error (e.g., `err('PAYMENT_TIMEOUT')`):
 
 ```typescript
-if (!result.ok && result.error.type === 'UNEXPECTED') {
-  console.log('Step failed:', result.error.stepName);
+import { isUnexpectedError } from 'awaitly';
+
+if (!result.ok && isUnexpectedError(result.error)) {
   console.log('Original error:', result.error.cause);  // The thrown exception
 }
 ```
 
-No manual `if (!result.ok)` checks. The type system documents what can go wrong.
+You write no manual `if (!result.ok)` checks, and the type system documents what can go wrong.
 
 We've eliminated boilerplate and made error types explicit across steps. But we still haven't solved the partial failure problem. If payment succeeds and inventory fails, the customer is still charged.
 
@@ -152,15 +152,15 @@ We've eliminated boilerplate and made error types explicit across steps. But we 
 
 ## When Failure Means Rollback: The Saga Pattern
 
-Your on-call phone rings. A customer placed an order, got charged twice, and the order never shipped. You check the logs: the first payment succeeded, inventory check failed, retry charged again, and somehow the order creation threw an exception. There's no compensation logic. You spend 2 hours refunding and reconciling by hand.
+Your on-call phone rings. A customer placed an order, got charged twice, and the order never shipped. You check the logs: the first payment succeeded, inventory check failed, retry charged again, and the order creation threw an exception. There's no compensation logic. You spend 2 hours refunding and reconciling by hand.
 
-**Sagas solve this.** Each step declares both what to do and what to undo. If any step fails, the saga compensates previous steps in reverse order.
+A saga fixes this: each step declares both what to do and what to undo. If any step fails, the saga compensates previous steps in reverse order.
 
 ```typescript
-import { createSagaWorkflow, isSagaCompensationError } from 'awaitly/saga';
+import { createSagaWorkflow, isSagaCompensationError } from 'awaitly/durable';
 
-// Pass all operations (actions + compensations) to createSagaWorkflow
-const sagaCheckout = createSagaWorkflow({
+// Name the saga, then pass all operations (actions + compensations)
+const sagaCheckout = createSagaWorkflow('checkout', {
   chargePayment,
   refundPayment,
   reserveInventory,
@@ -169,38 +169,33 @@ const sagaCheckout = createSagaWorkflow({
   cancelOrder,
 });
 
-// Callback receives (saga, deps) - deps contains all the operations
-const result = await sagaCheckout(async (saga, deps) => {
+const result = await sagaCheckout.run(async ({ step, deps }) => {
   // Step 1: Charge with compensation
-  const payment = await saga.step(
+  const payment = await step(
+    'charge-payment',
     () => deps.chargePayment({ amount: 99, method: 'card_xxx' }),
-    {
-      name: 'charge-payment',
-      compensate: (payment) => deps.refundPayment({ paymentId: payment.id }),
-    }
+    { compensate: (payment) => deps.refundPayment({ paymentId: payment.id }) }
   );
 
   // Step 2: Reserve inventory with compensation
-  const reservation = await saga.step(
+  const reservation = await step(
+    'reserve-inventory',
     () => deps.reserveInventory({ items: cartItems }),
-    {
-      name: 'reserve-inventory',
-      compensate: (reservation) => deps.releaseInventory({ reservationId: reservation.id }),
-    }
+    { compensate: (reservation) => deps.releaseInventory({ reservationId: reservation.id }) }
   );
 
   // Step 3: Create order with compensation
-  const order = await saga.step(
+  const order = await step(
+    'create-order',
     () => deps.createOrder({ userId, payment, reservation }),
-    {
-      name: 'create-order',
-      compensate: (order) => deps.cancelOrder({ orderId: order.id }),
-    }
+    { compensate: (order) => deps.cancelOrder({ orderId: order.id }) }
   );
 
   return order;
 });
 ```
+
+`compensate` is a step option on every awaitly workflow. `createSagaWorkflow` is `createWorkflow` with `SagaCompensationError` added to the error union, so the compiler reminds you to handle failed rollbacks.
 
 If `createOrder` fails after payment and inventory succeed:
 
@@ -246,12 +241,13 @@ graph TD
 
 ### Handling Compensation Errors
 
-If compensation itself fails, the saga tracks it:
+If every compensation succeeds, `result.error` is the original error that triggered the rollback. If compensation itself fails, you get a `SagaCompensationError`:
 
 ```typescript
 if (!result.ok && isSagaCompensationError(result.error)) {
   console.log('Saga failed, compensations may have partially succeeded');
-  console.log('Compensation errors:', result.error.compensationErrors);
+  console.log('Triggered by:', result.error.originalError);
+  console.log('Compensation errors:', result.error.compensationErrors); // [{ stepName, error }]
   // Alert ops team for manual intervention
   await alertOps('Saga compensation had errors', result.error);
 }
@@ -286,10 +282,11 @@ Compensations are **best-effort, not transactional**. Some actions cannot be und
     const span = tracer.startSpan('refund-payment');
     try {
       // Idempotent: refund API checks if already refunded
-      const result = await withTimeout(
-        deps.refundPayment({ paymentId: payment.id, idempotencyKey: `refund-${payment.id}` }),
-        { ms: 30_000 }
-      );
+      const result = await deps.refundPayment({
+        paymentId: payment.id,
+        idempotencyKey: `refund-${payment.id}`,
+        signal: AbortSignal.timeout(30_000), // Bounded: don't hang the error path
+      });
       span.setStatus({ code: result.ok ? 'OK' : 'ERROR' });
       return result;
     } finally {
@@ -306,9 +303,10 @@ When compensation is impossible, document what *can* be done (e.g., "queue for m
 When combining sagas with retries (via `step.retry()` from [Resilience Patterns](..//resilience)), ensure side-effecting steps are idempotent. Use idempotency keys so a retry can't double-apply:
 
 ```typescript
-const payment = await saga.step(
-  () => chargePayment({ amount, method, idempotencyKey: `order-${orderId}` }, deps),
-  { compensate: (p) => refundPayment({ paymentId: p.id }, deps) }
+const payment = await step(
+  'charge-payment',
+  () => deps.chargePayment({ amount, method, idempotencyKey: `order-${orderId}` }),
+  { compensate: (p) => deps.refundPayment({ paymentId: p.id }) }
 );
 ```
 
@@ -325,7 +323,7 @@ Client → Payment API → [timeout] → Client retries
               Payment succeeded (unknown to client)
 ```
 
-Your request succeeded, but the response was lost. With an idempotency key, the retry returns the original result instead of charging twice. **But only if the provider supports idempotency keys** and you use the same key.
+Your request succeeded, but the response was lost. With an idempotency key, the retry returns the original result instead of charging twice. That works only if **the provider supports idempotency keys** and you reuse the same key.
 
 **What this means:**
 
@@ -339,15 +337,17 @@ Your request succeeded, but the response was lost. With an idempotency key, the 
 
 ```typescript
 // Bad: Non-idempotent - creates duplicate records on retry
-await saga.step(
+await step(
+  'create-order',
   () => deps.createOrder({ userId, items }),
-  { name: 'create-order', compensate: (o) => deps.cancelOrder({ orderId: o.id }) }
+  { compensate: (o) => deps.cancelOrder({ orderId: o.id }) }
 );
 
 // Good: Idempotent - uses external reference as natural key
-await saga.step(
+await step(
+  'create-order',
   () => deps.createOrder({ userId, items, orderReference: `cart-${cartId}` }),
-  { name: 'create-order', compensate: (o) => deps.cancelOrder({ orderId: o.id }) }
+  { compensate: (o) => deps.cancelOrder({ orderId: o.id }) }
 );
 ```
 
@@ -361,11 +361,11 @@ When exact-once matters (financial transactions, inventory), combine idempotency
 
 ### Saga + Retry Interaction
 
-Combining `saga.step()` with retry logic (e.g., `step.retry()` from resilience patterns) introduces additional hazards:
+Combining compensated steps with retry logic (e.g., the `retry` step option from resilience patterns) introduces additional hazards:
 
 **The crash window problem:**
 ```
-saga.step(chargePayment) → payment succeeds → [CRASH before step recorded]
+step('charge-payment') → payment succeeds → [CRASH before step recorded]
                                                     ↓
                               Saga resumes → retries chargePayment → double charge
 ```
@@ -379,16 +379,20 @@ Even with idempotency keys, your system only "knows" a step completed if you rec
 3. **Persist state after side-effecting steps** – If your workflow supports persisted state, save it as soon as a side-effecting step succeeds (this is your responsibility, not automatic)
 
 ```typescript
-// Dangerous: retry wrapper outside saga step tracking (multiple step events, confusing observability)
-const payment = await retry(
-  () => saga.step(() => deps.charge({ amount, idempotencyKey })),
-  { maxAttempts: 3 }
+// Dangerous: hand-rolled retry loop around the step (multiple step events, confusing observability)
+const payment = await myRetryHelper(
+  () => step('charge-payment', () => deps.charge({ amount, idempotencyKey })),
+  { attempts: 3 }
 );
 
-// Better: retry inside the action (one logical step, one set of events)
-const payment = await saga.step(
-  () => retry(() => deps.charge({ amount, idempotencyKey }), { maxAttempts: 3 }),
-  { compensate: (p) => deps.refund({ paymentId: p.id }) }
+// Better: retry as a step option (one logical step, one set of events, one compensation)
+const payment = await step(
+  'charge-payment',
+  () => deps.charge({ amount, idempotencyKey }),
+  {
+    retry: { attempts: 3 },
+    compensate: (p) => deps.refund({ paymentId: p.id }),
+  }
 );
 ```
 
@@ -399,34 +403,26 @@ When in doubt, make your actions idempotent at the domain level (check-then-act 
 Read operations and idempotent operations don't need compensation:
 
 ```typescript
-const orderSaga = createSagaWorkflow({
+const orderSaga = createSagaWorkflow('order', {
   fetchUser,
   chargePayment,
   refundPayment,
   recordEmailSent,  // Idempotent via upsert
 });
 
-const result = await orderSaga(async (saga, deps) => {
+const result = await orderSaga.run(async ({ steps, step, deps }) => {
   // No compensation needed for reads
-  const user = await saga.step(
-    () => deps.fetchUser({ userId }),
-    { name: 'fetch-user' }
-  );
+  const user = await steps.fetchUser({ userId });
 
   // Needs compensation - creates state
-  const payment = await saga.step(
+  const payment = await step(
+    'charge-payment',
     () => deps.chargePayment({ amount, method }),
-    {
-      name: 'charge-payment',
-      compensate: (p) => deps.refundPayment({ paymentId: p.id }),
-    }
+    { compensate: (p) => deps.refundPayment({ paymentId: p.id }) }
   );
 
   // Idempotent via upsert (uses orderId as key) - no compensation needed
-  await saga.step(
-    () => deps.recordEmailSent({ email: user.email, orderId }),
-    { name: 'record-email' }
-  );
+  await steps.recordEmailSent({ email: user.email, orderId });
 
   return { payment };
 });
@@ -441,7 +437,7 @@ Saga A: reserve(item) → success (1 left → 0 left)
 Saga B: reserve(item) → success (0 left → -1 left) ← oversold!
 ```
 
-**Or worse, the compensation race:**
+**The compensation race is worse:**
 
 ```
 Saga A: reserve → charge → [charge fails] → release
@@ -455,16 +451,14 @@ Saga B:              reserve (while A is releasing) → charge → ship
 1. **Use leases with TTLs, not permanent reservations:**
 
 ```typescript
-const reservation = await saga.step(
+const reservation = await step(
+  'reserve-inventory',
   () => deps.reserveInventory({
     items,
     leaseDurationMs: 5 * 60 * 1000,  // 5-minute hold
     leaseId: `checkout-${checkoutId}`
   }),
-  {
-    name: 'reserve-inventory',
-    compensate: (r) => deps.releaseInventory({ leaseId: r.leaseId }),
-  }
+  { compensate: (r) => deps.releaseInventory({ leaseId: r.leaseId }) }
 );
 ```
 
@@ -499,7 +493,7 @@ compensate: async (reservation) => {
 }
 ```
 
-**The general principle:** Compensations must handle the case where time has passed and state has changed. Check current state before compensating.
+Compensations must handle the case where time has passed and state has changed, so check current state before compensating.
 
 **Avoid check-then-reserve patterns.** The overselling example above happens when `checkAvailability` and `reserve` are separate calls. Prefer a single atomic `reserveIfAvailable` endpoint that uses database constraints:
 
@@ -518,17 +512,16 @@ const result = await deps.inventory.reserveIfAvailable(itemId, quantity);
 
 ## Multi-API Orchestration: Parallel Operations
 
-Your dashboard loads user profile, recent orders, and recommendations. Sequential calls take 900ms (300ms each). But they're independent. Why wait?
+Your dashboard loads user profile, recent orders, and recommendations. Sequential calls take 900ms (300ms each). They're independent, so run them in parallel.
 
 ```typescript
-import { allAsync } from 'awaitly';
-import { createWorkflow } from 'awaitly/workflow';
+import { allAsync, createWorkflow } from 'awaitly';
 
 const loadDashboard = createWorkflow({ fetchProfile, fetchOrders, fetchRecommendations });
 
-const result = await loadDashboard(async (step, deps) => {
+const result = await loadDashboard.run(async ({ step, deps }) => {
   // Run all three in parallel - fail fast if any fails
-  const [profile, orders, recs] = await step(() =>
+  const [profile, orders, recs] = await step('loadDashboard', () =>
     allAsync([
       deps.fetchProfile({ userId }),
       deps.fetchOrders({ userId, limit: 5 }),
@@ -547,7 +540,7 @@ const result = await loadDashboard(async (step, deps) => {
 ```typescript
 const controller = new AbortController();
 
-const result = await step(async () => {
+const result = await step('loadDashboard', async () => {
   const promise = allAsync([
     deps.fetchProfile({ userId, signal: controller.signal }),
     deps.fetchOrders({ userId, limit: 5, signal: controller.signal }),
@@ -582,19 +575,19 @@ if (result.ok) {
   const [profile, orders, recs] = result.value;
   return { profile, orders, recommendations: recs };
 } else {
-  // ONE OR MORE failed - result.error is array of SettledError objects
+  // ONE OR MORE failed - result.error is an array of { error } objects
   console.log('Failures:', result.error.map(e => e.error));
   // Handle gracefully or return error
 }
 ```
 
-**Note:** Unlike `Promise.allSettled()`, this returns a Result: `ok` if all succeed, `err` if any fail. This is consistent with awaitly's philosophy that all functions return Results.
+**Note:** Unlike `Promise.allSettled()`, this returns a Result: `ok` if all succeed, `err` if any fail. That matches awaitly's convention that all functions return Results.
 
-Use it when you want to report all failures at once rather than stopping at the first error. For true "partial success" where you continue with whatever succeeded, check each result after using `Promise.allSettled()`.
+Use it when you want to report all failures at once rather than stopping at the first error. For "partial success", where you continue with whatever succeeded, check each result after using `Promise.allSettled()`.
 
 ### Racing to First Success
 
-Need failover between primary and backup endpoints?
+For failover between primary and backup endpoints:
 
 ```typescript
 import { anyAsync } from 'awaitly';
@@ -621,12 +614,12 @@ Some operations depend on others:
 ```typescript
 const userDashboard = createWorkflow({ fetchUser, fetchPosts, fetchFriends, fetchSettings });
 
-const result = await userDashboard(async (step, deps) => {
+const result = await userDashboard.run(async ({ steps, step, deps }) => {
   // Fetch user first
-  const user = await step(() => deps.fetchUser({ userId }));
+  const user = await steps.fetchUser({ userId });
 
   // Then fetch user's data in parallel
-  const [posts, friends, settings] = await step(() =>
+  const [posts, friends, settings] = await step('loadUserData', () =>
     allAsync([
       deps.fetchPosts({ userId: user.id }),
       deps.fetchFriends({ userId: user.id }),
@@ -638,17 +631,16 @@ const result = await userDashboard(async (step, deps) => {
 });
 ```
 
-Sequential when needed, parallel when possible.
+Run a step sequentially when it needs another step's output, and in parallel otherwise.
 
 ---
 
 ## Batch Processing at Scale
 
-Your migration script processes 50,000 user records. At record 47,000, your machine crashes. You restart. It starts from record 1. Another 47,000 API calls. Your rate limit budget for the day is gone.
+Your migration script processes 50,000 user records. At record 47,000, your machine crashes. You restart, and it starts from record 1: another 47,000 API calls. Your rate limit budget for the day is gone.
 
 ```typescript
-import { ok, err } from 'awaitly';
-import { processInBatches, batchPresets } from 'awaitly/workflow';
+import { ok, err, processInBatches } from 'awaitly';
 
 const result = await processInBatches(
   users,  // Array of 50,000 users
@@ -679,6 +671,8 @@ const result = await processInBatches(
 ### Presets for Common Scenarios
 
 ```typescript
+import { processInBatches, batchPresets } from 'awaitly';
+
 // Conservative: batchSize=20, concurrency=3, delay=50ms
 // Good for memory-constrained environments or strict rate limits
 await processInBatches(items, process, batchPresets.conservative);
@@ -697,7 +691,7 @@ await processInBatches(items, process, batchPresets.aggressive);
 Processing stops on the first error, with context about where it failed:
 
 ```typescript
-import { isBatchProcessingError } from 'awaitly/workflow';
+import { isBatchProcessingError } from 'awaitly';
 
 if (!result.ok) {
   if (isBatchProcessingError(result.error)) {
@@ -741,14 +735,17 @@ The most robust pattern is idempotent processing + a "processed" marker or uniqu
 
 ## Human-in-the-Loop: Approval Workflows
 
-Refunds over $1000 require manager approval. The customer clicks 'refund', and then nothing happens on its own. The request sits in a database table. Someone checks the table by hand. Sometimes they forget. Sometimes the refund is approved but the code to process it isn't connected to the approval system.
+Refunds over $1000 require manager approval. The customer clicks 'refund', and then nothing happens on its own. The request sits in a database table. Someone checks the table by hand and sometimes forgets. Other times the refund is approved but the code to process it isn't connected to the approval system.
 
 With awaitly, approval is a first-class step:
 
 ```typescript
-import { createWorkflow, createResumeStateCollector } from 'awaitly/workflow';
-import { createApprovalStep, isPendingApproval } from 'awaitly/hitl';
-import { serializeResumeState } from 'awaitly/persistence';
+import {
+  err,
+  createWorkflow,
+  createApprovalStep,
+  createResumeStateCollector,
+} from 'awaitly';
 
 // Define the approval step (parameterized by refundId at runtime)
 const createRefundApprovalStep = (refundId: string) =>
@@ -763,26 +760,31 @@ const createRefundApprovalStep = (refundId: string) =>
     },
   });
 
-// Workflow with approval
-const refundWorkflow = createWorkflow({ calculateRefund, processRefund });
-
 async function processRefundRequest(refundId: string, orderId: string) {
   const collector = createResumeStateCollector();
   const approvalStep = createRefundApprovalStep(refundId);
 
-  const result = await refundWorkflow(async (step, deps) => {
-    const refund = await step(() => deps.calculateRefund({ orderId }));
+  // Workflow with approval; the collector records every completed step
+  const refundWorkflow = createWorkflow(
+    { calculateRefund, processRefund },
+    { onEvent: collector.handleEvent }
+  );
 
-    // Workflow pauses here until approved
+  const result = await refundWorkflow.run(async ({ steps, step }) => {
+    const refund = await steps.calculateRefund({ orderId });
+
+    // Workflow pauses here until approved. The key is what injectApproval targets later.
     if (refund.amount > 1000) {
-      const approval = await step(approvalStep);
+      const approval = await step('refundApproval', approvalStep, {
+        key: `refund-approval:${refundId}`,
+      });
       if (!approval.approved) {
         return err('REFUND_REJECTED');
       }
     }
 
-    return await step(() => deps.processRefund({ refund }));
-  }, { onEvent: collector.handleEvent });
+    return await steps.processRefund({ refund });
+  });
 
   return { result, collector };
 }
@@ -791,7 +793,9 @@ async function processRefundRequest(refundId: string, orderId: string) {
 ### Check for Pending Approval
 
 ```typescript
-const { result, collector } = await processRefundRequest(refundId, orderId, deps);
+import { isPendingApproval, serializeResumeState } from 'awaitly';
+
+const { result, collector } = await processRefundRequest(refundId, orderId);
 
 if (!result.ok && isPendingApproval(result.error)) {
   // Save workflow state for later
@@ -810,8 +814,7 @@ if (!result.ok && isPendingApproval(result.error)) {
 When the manager approves:
 
 ```typescript
-import { injectApproval } from 'awaitly/hitl';
-import { deserializeResumeState } from 'awaitly/persistence';
+import { createWorkflow, injectApproval, deserializeResumeState } from 'awaitly';
 
 // Load saved state
 const saved = await db.pendingWorkflows.find(refundId);
@@ -823,17 +826,18 @@ const updatedState = injectApproval(state, {
   value: { approvedBy: 'manager@company.com', timestamp: Date.now() },
 });
 
-// Resume workflow from where it left off
-const workflow = createWorkflow({ calculateRefund, processRefund }, { resumeState: updatedState });
-const result = await workflow(async (step, deps) => {
-  const refund = await step(() => deps.calculateRefund({ orderId }));
-  // ... approval step is replayed from state ...
-  return await step(() => deps.processRefund({ refund }));
-});
-// Workflow continues from the approval step
+// Resume: run the same workflow body with the updated state
+const workflow = createWorkflow({ calculateRefund, processRefund });
+const result = await workflow.run(async ({ steps, step }) => {
+  const refund = await steps.calculateRefund({ orderId });                // Replayed from state
+  const approval = await step('refundApproval', approvalStep, {
+    key: `refund-approval:${refundId}`,                                    // Returns injected approval
+  });
+  return await steps.processRefund({ refund, approval });                 // Actually executes now
+}, { resumeState: updatedState });
 ```
 
-**Security considerations:** `injectApproval` is powerful. It lets code bypass the normal approval check. In production:
+**Security considerations:** `injectApproval` lets code bypass the normal approval check, so in production:
 
 1. **Verify approver identity** – Ensure the approver is authorized for this approval type
 2. **Audit log all approvals** – Record who approved, when, and what workflow it affected
@@ -864,8 +868,7 @@ const updatedState = injectApproval(state, { /* ... */ });
 Don't wait for humans in tests. Inject approvals using `injectApproval()` with `resumeState`:
 
 ```typescript
-import { injectApproval } from 'awaitly/hitl';
-import { createWorkflow } from 'awaitly/workflow';
+import { createWorkflow, injectApproval } from 'awaitly';
 
 const approvalStep = createRefundApprovalStep('test-refund-123');
 
@@ -877,14 +880,16 @@ const resumeState = injectApproval(emptyState, {
 });
 
 // Workflow uses cached approval from resumeState
-const workflow = createWorkflow({ calculateRefund, processRefund }, { resumeState });
+const workflow = createWorkflow({ calculateRefund, processRefund });
 
-const result = await workflow(async (step, deps) => {
-  const refund = await step(() => deps.calculateRefund({ orderId }));
+const result = await workflow.run(async ({ steps, step }) => {
+  const refund = await steps.calculateRefund({ orderId });
   // Must use matching key for cache lookup
-  const approval = await step(approvalStep, { key: 'refund-approval:test-refund-123' });
-  return await step(() => deps.processRefund({ refund, approval }));
-});
+  const approval = await step('refundApproval', approvalStep, {
+    key: 'refund-approval:test-refund-123',
+  });
+  return await steps.processRefund({ refund, approval });
+}, { resumeState });
 ```
 
 ### Durability Boundaries
@@ -895,7 +900,7 @@ The `serializeResumeState` / `deserializeResumeState` / `injectApproval` pattern
 - Which steps have completed
 - Return values from completed steps (for replay)
 - Which approval steps are pending/approved
-- Step metadata (names, keys)
+- Step keys (the step ID, or the explicit `key` option)
 
 **What IS NOT persisted:**
 - External side effects (payments charged, emails sent, inventory reserved)
@@ -906,21 +911,22 @@ The `serializeResumeState` / `deserializeResumeState` / `injectApproval` pattern
 **This is not transactional replay.** When you resume a workflow:
 
 ```typescript
-// Original run: steps 1-2 completed, step 3 pending approval
-const result = await workflow(async (step, deps) => {
-  const a = await step(() => deps.fetchA());     // Completed, value cached
-  const b = await step(() => deps.chargeCard()); // Completed, value cached - PAYMENT ALREADY HAPPENED
-  const c = await step(approvalStep);            // Pending - workflow paused here
-  return await step(() => deps.ship());
-}, { onEvent: collector.handleEvent });
+const body = async ({ steps, step }) => {
+  const a = await steps.fetchA();                     // 1
+  const b = await steps.chargeCard();                 // 2
+  const c = await step('approval', approvalStep);     // 3
+  return await steps.ship();                          // 4
+};
+
+// Original run (workflow created with onEvent: collector.handleEvent):
+// steps 1-2 complete and are cached - PAYMENT ALREADY HAPPENED
+// step 3 is pending - workflow paused here
+const result = await workflow.run(body);
 
 // After approval, resumed with state:
-const resumed = await workflow(async (step, deps) => {
-  const a = await step(() => deps.fetchA());     // Replayed from state (no API call)
-  const b = await step(() => deps.chargeCard()); // Replayed from state (no API call)
-  const c = await step(approvalStep);            // Returns injected approval
-  return await step(() => deps.ship());          // Actually executes now
-}, { resumeState: updatedState });
+// steps 1-2 replay from state (no API call), step 3 returns the injected approval,
+// step 4 actually executes now
+const resumed = await workflow.run(body, { resumeState: updatedState });
 ```
 
 **Key implications:**
@@ -929,20 +935,20 @@ const resumed = await workflow(async (step, deps) => {
 
 2. **Crashes between step completion and state persistence lose data** – If your process dies after `chargeCard()` completes but before you persist `collector.getResumeState()`, you'll retry the payment on resume (unless you use idempotency keys).
 
-3. **External state may have changed** – The inventory you reserved 2 hours ago (before approval) might have expired or been sold. Design for this.
+3. **External state may have changed** – The inventory you reserved 2 hours ago (before approval) might have expired or been sold, so design for that.
 
 **Recommendation:** For critical workflows, persist state after every step:
 
 ```typescript
-const result = await workflow(async (step, deps) => {
-  const payment = await step(() => deps.charge());
+const result = await workflow.run(async ({ steps, step }) => {
+  const payment = await steps.charge();
   await persistWorkflowState(workflowId, collector.getResumeState());  // Checkpoint
 
-  const approval = await step(approvalStep);
+  const approval = await step('approval', approvalStep);
   await persistWorkflowState(workflowId, collector.getResumeState());  // Checkpoint
 
-  return await step(() => deps.fulfill());
-}, { onEvent: collector.handleEvent });
+  return await steps.fulfill();
+});
 ```
 
 **Step Return Value Guidance:**
@@ -958,11 +964,11 @@ Since step return values are serialized and persisted, be intentional about what
 
 ```typescript
 // Good: Minimal, stable return value
-const payment = await step(() => deps.charge({ amount }));
+const payment = await steps.charge({ amount });
 // payment = { id: 'pay_123', status: 'succeeded' }
 
 // Bad: Large object with sensitive data and unstable shape
-const payment = await step(() => deps.chargeAndReturnEverything({ amount }));
+const payment = await steps.chargeAndReturnEverything({ amount });
 // payment = { id: '...', card: { last4: '4242', ... }, customer: { email: '...' }, ... }
 ```
 
@@ -975,7 +981,7 @@ For long-running workflows, consider adding a `workflowVersion` field to your pe
 These patterns compose:
 
 ```typescript
-const orderFulfillment = createSagaWorkflow({
+const orderFulfillment = createSagaWorkflow('order-fulfillment', {
   validateOrder,
   reserveInventory,
   releaseInventory,
@@ -986,45 +992,33 @@ const orderFulfillment = createSagaWorkflow({
   notifyCustomer,
 });
 
-const result = await orderFulfillment(async (saga, deps) => {
+const result = await orderFulfillment.run(async ({ steps, step, deps }) => {
   // Validation (no compensation needed)
-  const order = await saga.step(
-    () => deps.validateOrder({ orderId }),
-    { name: 'validate-order' }
-  );
+  const order = await steps.validateOrder({ orderId });
 
   // Reserve inventory with compensation
-  const reservation = await saga.step(
+  const reservation = await step(
+    'reserve-inventory',
     () => deps.reserveInventory({ items: order.items }),
-    {
-      name: 'reserve-inventory',
-      compensate: (r) => deps.releaseInventory({ reservationId: r.id }),
-    }
+    { compensate: (r) => deps.releaseInventory({ reservationId: r.id }) }
   );
 
   // Charge payment with compensation
-  const payment = await saga.step(
+  const payment = await step(
+    'charge-payment',
     () => deps.chargePayment({ amount: order.total }),
-    {
-      name: 'charge-payment',
-      compensate: (p) => deps.refundPayment({ paymentId: p.id }),
-    }
+    { compensate: (p) => deps.refundPayment({ paymentId: p.id }) }
   );
 
   // Create shipment with compensation
-  const shipment = await saga.step(
+  const shipment = await step(
+    'create-shipment',
     () => deps.createShipment({ order, reservation }),
-    {
-      name: 'create-shipment',
-      compensate: (s) => deps.cancelShipment({ shipmentId: s.id }),
-    }
+    { compensate: (s) => deps.cancelShipment({ shipmentId: s.id }) }
   );
 
   // Notify customer (no compensation - can't un-send)
-  await saga.step(
-    () => deps.notifyCustomer({ email: order.customerEmail, shipment }),
-    { name: 'notify-customer' }
-  );
+  await steps.notifyCustomer({ email: order.customerEmail, shipment });
 
   return { order, shipment, payment };
 });
@@ -1036,8 +1030,8 @@ const result = await orderFulfillment(async (saga, deps) => {
 
 | Scenario                   | Pattern              | APIs                                       |
 | -------------------------- | -------------------- | ------------------------------------------ |
-| Linear multi-step          | `createWorkflow`     | `step()`                                   |
-| Multi-step with rollback   | `createSagaWorkflow` | `saga.step(action, { compensate })`        |
+| Linear multi-step          | `createWorkflow`     | `steps.fn()`, `step('id', fn)`             |
+| Multi-step with rollback   | `createSagaWorkflow` | `step('id', action, { compensate })`       |
 | Independent parallel calls | `createWorkflow`     | `allAsync()`, `allSettledAsync()`          |
 | First success wins         | `createWorkflow`     | `anyAsync()`                               |
 | High-volume processing     | `processInBatches`   | Rate limits, checkpoints                   |
@@ -1051,13 +1045,13 @@ const result = await orderFulfillment(async (saga, deps) => {
 
 2. **Use sagas when you need compensation.** Each step declares both action and undo. Compensations run in reverse order (LIFO).
 
-3. **Make side-effecting steps idempotent.** Use idempotency keys when combining retries with operations like payment charging. This is non-negotiable for financial operations.
+3. **Make side-effecting steps idempotent.** Use idempotency keys when combining retries with operations like payment charging. Financial operations require it.
 
 4. **Persist state after each step for critical workflows.** Without checkpoints, a crash loses progress and may cause duplicate side effects on restart. For financial or long-running workflows, save `collector.getResumeState()` after every step completion.
 
 5. **Return minimal, stable values from steps.** awaitly serializes step return values into workflow state. Return IDs and small immutable data, not full objects, secrets, or PII.
 
-6. **Use parallel operations for independent calls.** `allAsync` for mandatory data; `allSettledAsync` when you need all errors reported. Add `step.retry()` and `step.withTimeout()` from [Resilience Patterns](..//resilience) when needed.
+6. **Use parallel operations for independent calls.** `allAsync` for mandatory data; `allSettledAsync` when you need all errors reported. Add `step.retry('id', ...)` and `step.withTimeout('id', ...)` from [Resilience Patterns](..//resilience) when needed.
 
 7. **Respect rate limits with `processInBatches`.** Avoid overwhelming downstream systems. Use cursor-based checkpoints for resume capability.
 
@@ -1076,19 +1070,18 @@ const checkout = createWorkflow(
   { chargePayment, reserveInventory, createOrder },
   {
     onEvent: (event) => {
-      // { type: 'step_complete', stepKey: 'charge-payment', durationMs: 150 }
-      // { type: 'step_error', stepKey: 'reserve-inventory', error: 'OUT_OF_STOCK' }
-      // { type: 'compensation_start', stepName: 'refund-payment' }
+      // { type: 'step_complete', stepKey: 'chargePayment', durationMs: 150, ... }
+      // { type: 'step_error', stepKey: 'reserveInventory', error: 'OUT_OF_STOCK', ... }
     },
   }
 );
 ```
 
-But raw events aren't enough. We need distributed traces that show the full picture: which step took 5 seconds, which saga compensation ran, where the bottleneck is.
+awaitly also emits OpenTelemetry spans for runs, steps, retries, and saga compensations out of the box (`AWAITLY_TELEMETRY=0` turns them off). Raw events and spans still leave gaps. You need distributed traces that show which step took 5 seconds, which saga compensation ran, and where the bottleneck is.
 
 How do we connect these events to our observability stack?
 
-But first, let's zoom out. We've been composing functions into workflows. A broader principle explains *why* this architecture works.
+Before that, one broader principle explains *why* composing functions into workflows works.
 
 ---
 

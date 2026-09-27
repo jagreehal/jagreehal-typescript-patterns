@@ -39,10 +39,6 @@ const metadata = {
     title: 'Enforcing Patterns with TypeScript',
     description: 'Use strict TypeScript compiler flags to enforce patterns at compile time. Beyond strict mode with noUncheckedIndexedAccess.',
   },
-  eslint: {
-    title: 'Enforcing Patterns with ESLint',
-    description: 'Use ESLint rules to enforce architectural boundaries, function signatures, and import patterns at lint time.',
-  },
   performance: {
     title: 'Performance Testing',
     description: 'Use load tests to find bottlenecks and chaos tests to verify resilience patterns work under pressure.',
